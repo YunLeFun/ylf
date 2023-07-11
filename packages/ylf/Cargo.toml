@@ -1,0 +1,23 @@
+[package]
+name = "ylf"
+version = "0.0.1"
+authors = ["YunYouJun <me@yunyoujun.cn"]
+description = "A cli tool for YunLeFun."
+repository = "https://github.com/YunLeFun/ylf"
+keywords = ["cli", "yunlefun"]
+categories = ["cli", "yunlefun"]
+license = "MIT"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.71"
+env_logger = "0.10.0"
+log = "0.4.19"
+structopt = "0.3.26"
+
+[dev-dependencies]
+assert_cmd = "2.0.11"
+assert_fs = "1.0.13"
+predicates = "3.0.3"

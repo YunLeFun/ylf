@@ -1,0 +1,14 @@
+[workspace]
+members = [
+  "packages/*"
+]
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+debug = false
+# https://course.rs/cargo/reference/profiles.html#release
+lto = true

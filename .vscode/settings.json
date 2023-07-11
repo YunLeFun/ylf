@@ -1,0 +1,11 @@
+{
+  "cSpell.words": [
+    "structopt"
+  ],
+  "rust-analyzer.linkedProjects": [
+    "./packages/ylf/Cargo.toml",
+    "./packages/ylf/Cargo.toml",
+    "./packages/ylf/Cargo.toml",
+    "./packages/ylf/Cargo.toml"
+  ]
+}
