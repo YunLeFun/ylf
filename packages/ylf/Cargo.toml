@@ -1,13 +1,15 @@
 [package]
 name = "ylf"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["YunYouJun <me@yunyoujun.cn"]
 description = "A cli tool for YunLeFun."
 repository = "https://github.com/YunLeFun/ylf"
 keywords = ["cli", "yunlefun"]
-categories = ["cli", "yunlefun"]
+categories = ["command-line-interface"]
 license = "MIT"
 edition = "2021"
+
+build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -21,3 +23,7 @@ structopt = "0.3.26"
 assert_cmd = "2.0.11"
 assert_fs = "1.0.13"
 predicates = "3.0.3"
+
+[build-dependencies]
+clap = "4.3.11"
+clap_mangen = "0.2.12"

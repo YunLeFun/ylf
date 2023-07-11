@@ -1,6 +1,18 @@
 [workspace]
 members = [
-  "packages/*"
+  "packages/ylf"
+]
+
+[workspace.package]
+edition = "2021"
+include = [
+  "build.rs",
+  "src/**/*",
+  "Cargo.toml",
+  "LICENSE*",
+  "README.md",
+  "benches/**/*",
+  "examples/**/*"
 ]
 
 [profile.dev]
