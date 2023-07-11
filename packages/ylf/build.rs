@@ -1,8 +1,11 @@
+// #[path="src/main.rs"]
+// mod main;
+
 fn main() -> std::io::Result<()> {
-  let out_dir = std::path::PathBuf::from(std::env::var_os("OUT_DIR").ok_or(std::io::ErrorKind::NotFound)?);
+  println!("Hello from build.rs!");
 
-  println!("{}", out_dir.display());
-
+  let out_dir = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").ok_or_else(|| std::io::ErrorKind::NotFound)?);
+  // // let cmd = cli::Cli::command();
   let cmd = clap::Command::new("ylf");
 
   let man = clap_mangen::Man::new(cmd);
