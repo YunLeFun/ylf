@@ -1,5 +1,9 @@
 # ylf
 
-## Test
+- Use [Bun](https://bun.sh) to run TS
 
-- `env RUST_LOG=info cargo run --bin output-log`
+Run test commands:
+
+```bash
+bunx ylf [command]
+```

@@ -1,11 +1,14 @@
 [package]
 name = "ylf"
 version = "0.0.3"
-authors = ["YunYouJun <me@yunyoujun.cn"]
+authors = [ "YunYouJun <me@yunyoujun.cn" ]
 description = "A cli tool for YunLeFun."
 repository = "https://github.com/YunLeFun/ylf"
-keywords = ["cli", "yunlefun"]
-categories = ["command-line-interface"]
+keywords = [
+  "cli",
+  "yunlefun"
+]
+categories = [ "command-line-interface" ]
 license = "MIT"
 edition = "2021"
 build = "build.rs"
@@ -24,5 +27,9 @@ assert_fs = "1.0.13"
 predicates = "3.0.3"
 
 [build-dependencies]
-clap = { version = "4.3.11", features = ["derive", "cargo", "env"] }
+clap = { version = "4.3.11", features = [
+  "derive",
+  "cargo",
+  "env"
+] }
 clap_mangen = "0.2.12"

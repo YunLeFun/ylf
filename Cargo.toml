@@ -1,7 +1,5 @@
 [workspace]
-members = [
-  "packages/ylf"
-]
+members = [ "packages/ylf" ]
 
 [workspace.package]
 edition = "2021"
