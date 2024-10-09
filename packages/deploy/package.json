@@ -1,0 +1,16 @@
+{
+  "name": "@yunlefun/deploy",
+  "bin": {
+    "deploy": "./bin/index.js"
+  },
+  "scripts": {
+    "test": "cd test && bunx deploy"
+  },
+  "dependencies": {
+    "c12": "^2.0.1",
+    "cloudflare": "^3.5.0",
+    "consola": "^3.2.3",
+    "date-fns": "^4.1.0",
+    "dotenv": "^16.4.5"
+  }
+}

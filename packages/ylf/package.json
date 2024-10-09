@@ -8,9 +8,10 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "cloudflare": "^3.5.0",
     "consola": "^3.2.3",
     "dotenv": "^16.4.5",
-    "tencentcloud-sdk-nodejs": "^4.0.950",
+    "tencentcloud-sdk-nodejs": "^4.0.951",
     "yargs": "^17.7.2"
   },
   "devDependencies": {

@@ -15,6 +15,11 @@ const cli = yargs(hideBin(process.argv))
 cli.command('hello', 'Prints "Hello, World!"', () => {
   console.log('Hello, World!')
 })
+cli.option('debug', 'Enable debug mode', (argv) => {
+  if (argv.debug) {
+    process.env.NODE_DEBUG = 'http'
+  }
+})
 
 registerTencentCloudCommand(cli)
 
