@@ -17,8 +17,16 @@ export default defineConfig({
   },
   cloudflare: {
     accountId: accountId.ylf,
-    projectName: 'admin',
+    // projectName: 'admin',
+    projectName: 'tools',
   },
+
+  notification: {
+    feishu: {
+      enable: true,
+    },
+  },
+
   onDeployed: async () => {
     consola.success('部署完成')
   },

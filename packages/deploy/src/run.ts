@@ -10,7 +10,7 @@ export async function run() {
   })
 
   if (config.type === 'cloudflare-pages') {
-    const { checkCFPagesDeployStatus } = await import('./cloudflare')
-    await checkCFPagesDeployStatus(config.cloudflare)
+    const { cfPagesDeploy } = await import('./cloudflare')
+    await cfPagesDeploy(config)
   }
 }

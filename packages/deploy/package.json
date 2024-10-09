@@ -7,6 +7,8 @@
     "test": "cd test && bunx deploy"
   },
   "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.37.2",
+    "axios": "^1.7.7",
     "c12": "^2.0.1",
     "cloudflare": "^3.5.0",
     "consola": "^3.2.3",
