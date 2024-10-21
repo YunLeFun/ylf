@@ -12,7 +12,8 @@
     "cloudflare": "^3.5.0",
     "consola": "^3.2.3",
     "dotenv": "^16.4.5",
-    "tencentcloud-sdk-nodejs": "^4.0.951",
+    "pacote": "^19.0.1",
+    "tencentcloud-sdk-nodejs": "^4.0.956",
     "yargs": "^17.7.2"
   },
   "devDependencies": {

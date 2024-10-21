@@ -1,7 +1,16 @@
 import { colors } from 'consola/utils'
 
+// 符号
+export const symbols = {
+  success: '✔',
+  error: '✖',
+  line: '│',
+  end: '└',
+}
+
 export const lineStart = colors.dim('│')
 export const errorStart = colors.red('✖')
+export const successStart = colors.green('✔')
 
 /**
  * console.log(lineStart, ...args)

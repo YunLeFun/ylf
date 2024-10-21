@@ -1,0 +1,10 @@
+{
+  "name": "cilicili",
+  "version": "0.0.2",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts"
+    }
+  },
+  "module": "src/index.ts"
+}

@@ -10,6 +10,7 @@
     "@larksuiteoapi/node-sdk": "^1.37.2",
     "axios": "^1.7.7",
     "c12": "^2.0.1",
+    "cilicili": "workspace:*",
     "cloudflare": "^3.5.0",
     "consola": "^3.2.3",
     "date-fns": "^4.1.0",

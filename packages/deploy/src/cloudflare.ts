@@ -1,12 +1,11 @@
 import type { Stage } from 'cloudflare/resources/pages/projects/projects.mjs'
 import type { DeployConfig } from './types'
+import { consoleInfo, errorStart, sleep } from 'cilicili'
 import Cloudflare, { type ClientOptions } from 'cloudflare'
+
 import consola from 'consola'
 import { colors } from 'consola/utils'
-
 import { formatDate } from 'date-fns'
-import { consoleInfo, errorStart } from '../../shared'
-import { sleep } from '../../shared/utils'
 import { sendFeishuMessageByWebhook } from './feishu'
 
 export function initCloudflareClient(config: ClientOptions) {
