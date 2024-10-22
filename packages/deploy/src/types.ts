@@ -35,6 +35,28 @@ export interface BaseDeployConfig {
   }
 
   /**
+   * docker
+   */
+  docker?: {
+    /**
+     * 是否本地构建
+     */
+    local?: boolean
+    /**
+     * 构建检测超时时间
+     * 默认 500s
+     * 单位 ms
+     */
+    timeout?: number
+    /**
+     * 检查构建是否完成的间隔
+     * 默认 5s
+     * 单位 ms
+     */
+    interval?: number
+  }
+
+  /**
    * 通知
    */
   notification?: {
