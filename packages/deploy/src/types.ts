@@ -125,6 +125,13 @@ export interface TencentDeployConfig extends BaseDeployConfig {
        * 函数名
        */
       function: GetFunctionRequest
+      alias: {
+        /**
+         * 别名名称
+         * 发布版本后，会将此别名的所属流量切换到最新版本上
+         */
+        name: string
+      }
     }
 
     /**

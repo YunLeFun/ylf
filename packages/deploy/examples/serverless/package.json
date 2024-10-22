@@ -4,6 +4,5 @@
   "scripts": {
     "build": "bun build ./index.ts --outdir ./dist",
     "deploy": "bunx deploy"
-  },
-  "dependencies": {}
+  }
 }

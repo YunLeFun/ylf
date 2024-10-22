@@ -8,10 +8,11 @@ import process from 'node:process'
 import { consoleInnerInfo, sleep } from 'cilicili'
 
 import consola from 'consola'
-
+import { colors } from 'consola/utils'
 import { formatDate } from 'date-fns'
 import { execa } from 'execa'
 import fs from 'fs-extra'
+import gradient from 'gradient-string'
 import tencentcloud from 'tencentcloud-sdk-nodejs'
 
 const defaultClientConfig: ClientConfig = {
@@ -45,6 +46,41 @@ export async function buildAndPushDockerImage(options: {
 }
 
 /**
+ * 等待云函数变为可用状态
+ */
+export async function waitSCFReady(options: {
+  config: TencentDeployConfig
+  scfClient: InstanceType<typeof tencentcloud.scf.v20180416.Client>
+}) {
+  let isFunctionReady = false
+  const maxRetry = 12
+  const retryInterval = 5000
+  let retryCount = 0
+
+  const { scfClient, config } = options
+  while (!isFunctionReady) {
+    const funRes = await scfClient.GetFunction({
+      ...config.tencent.scf.function,
+    })
+    if (funRes.Status === 'Active') {
+      isFunctionReady = true
+    }
+    else {
+      consoleInnerInfo(`   ${colors.dim('等待云函数变为可用状态...')}`)
+      await sleep(retryInterval)
+      retryCount++
+      if (retryCount > maxRetry) {
+        throw new Error('云函数部署超时，请稍后再试。')
+      }
+    }
+  }
+
+  return isFunctionReady
+}
+
+const cyanBlue = gradient(['cyan', 'blue'])
+
+/**
  * 部署 SCF
  */
 export async function deployTencentSCF(config: TencentDeployConfig) {
@@ -52,7 +88,9 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
   const commitId = await execa('git', ['rev-parse', 'HEAD'])
   const version = formatDate(new Date(), 'yyyyMMdd-HHmm')
 
-  consola.start('部署腾讯云 SCF...')
+  console.log(cyanBlue('🚀 部署腾讯云 SCF...'))
+  console.log()
+
   const SCFClient = tencentcloud.scf.v20180416.Client
   const scfClient = new SCFClient(Object.assign(defaultClientConfig, config.tencent.client))
 
@@ -67,11 +105,11 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
 
   // 构建 docker 镜像，上传到 TCR
   const repoName = config.tencent.tcr.image.RepoName
-  const dockerTag = 'latest'
+  let dockerTag = 'latest'
   const tcrDomain = 'ccr.ccs.tencentyun.com'
   // build docker
   if (config.docker?.local) {
-    consoleInnerInfo('🐳 本地构建 Docker 镜像')
+    consola.start('🐳 本地构建 Docker 镜像')
     await buildAndPushDockerImage({
       repoName,
       dockerTag,
@@ -79,7 +117,7 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
     })
   }
   else {
-    consoleInnerInfo('🐳 远程构建 Docker 镜像')
+    consola.start('🐳 远程构建 Docker 镜像')
   }
 
   // 查询 Docker 镜像
@@ -95,7 +133,7 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
   const isTimeout = () => (Date.now() - startCheckTime) > maxTimeout
   let latestTagInfo: TagInfo | undefined
   while (!isTimeout()) {
-    consoleInnerInfo('  🚀 检查 Docker 镜像构建状态')
+    consoleInnerInfo(`   ${colors.dim('检查 Docker 镜像构建状态...')}`)
     const describeImageRes = await tcrClient.DescribeImagePersonal({
       Limit: 1,
       ...config.tencent.tcr.image,
@@ -108,8 +146,15 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
     }
     else {
       latestTagInfo = describeImageRes.Data?.TagInfo[0]
-      consola.info('🐳 最新镜像', `${latestTagInfo?.TagName} ${latestTagInfo?.DockerVersion}`)
-      console.dir(latestTagInfo)
+      dockerTag = latestTagInfo?.TagName || ''
+      consola.success(
+        '🐳 最新镜像',
+        colors.magenta(latestTagInfo?.TagName || ''),
+        colors.gray(latestTagInfo?.DockerVersion || latestTagInfo?.Author || latestTagInfo?.Architecture || ''),
+        colors.yellow(latestTagInfo?.Size || latestTagInfo?.SizeByte ? `${(latestTagInfo.SizeByte / 1024 / 1024).toFixed(2)}MB` : ''),
+        colors.dim(latestTagInfo?.UpdateTime || ''),
+      )
+      // console.dir(latestTagInfo)
       break
     }
   }
@@ -125,12 +170,12 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
     throw new Error('请配置云函数名称 tenant.scf.function.FunctionName')
   }
   try {
-    const funRes = await scfClient.GetFunction({
+    const _funRes = await scfClient.GetFunction({
       ...config.tencent.scf.function,
     })
-    if (funRes.Status !== 'Active') {
-      throw new Error(`云函数 ${functionName} 不处于可用状态，可能有其他开发者正在更新此云函数。请稍后再试。`)
-    }
+    // if (funRes.Status !== 'Active') {
+    //   throw new Error(`云函数 ${functionName} (${colors.red(funRes.Status || '')}) 不处于可用状态，可能有其他开发者正在更新此云函数。请稍后再试。`)
+    // }
   }
   catch (error: any) {
     if (error.code === 'ResourceNotFound.Function') {
@@ -139,9 +184,11 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
     throw error
   }
 
-  consola.start('🚀 更新云函数代码', `${tcrDomain}/${repoName}:${dockerTag}`)
+  console.log()
+  consola.start('🚀 更新云函数代码', `${colors.dim(tcrDomain)}/${repoName}:${colors.magenta(dockerTag)}`)
   await scfClient.UpdateFunctionCode({
     FunctionName: functionName,
+    Namespace: config.tencent.scf.function.Namespace,
     Code: {
       ImageConfig: {
         ImageType: config.tencent.tcr.type || 'personal',
@@ -151,30 +198,59 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
       },
     },
   })
+  // 等待云函数变为可用状态
+  await waitSCFReady({
+    config,
+    scfClient,
+  })
+  consola.success('🎉 云函数已可用')
 
   // 发布新版本
+  console.log()
   consola.start('🚀 发布新版本')
   const versionRes = await scfClient.PublishVersion({
     FunctionName: functionName,
-    Description: `v${version} (image: ${repoName}:${commitId})`,
+    Description: `v${version} (image: ${repoName}:${dockerTag})`,
+    Namespace: config.tencent.scf.function.Namespace,
   })
+
+  // 等待云函数变为可用状态
+  await waitSCFReady({
+    config,
+    scfClient,
+  })
+
+  const functionVersion = versionRes.FunctionVersion || '1'
+  const scfVersion = Number(functionVersion)
+  consoleInnerInfo(`   切换别名 ${colors.dim(config.tencent.scf.alias.name)} 流量`)
+  await scfClient.UpdateAlias({
+    Name: functionName,
+    FunctionName: functionName,
+    FunctionVersion: functionVersion,
+  })
+  consola.success('🚀 部署完成', `版本 ${functionVersion}`)
 
   // 清理旧版本
   // 注意：这里删除的是上上个版本。因为发布新版本后，可能访问旧版本的流量还会存在一段时间
   // 如果直接删除上一个版本，可能会导致短时间内云函数无法正常访问，因此，只清理上上个版本
-  const scfVersion = Number(versionRes.FunctionVersion)
+  console.log()
   consola.start('🧹 清理旧版本')
-  try {
-    await scfClient.DeleteFunction({
-      FunctionName: functionName,
-      Qualifier: String(scfVersion - 2),
-    })
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  }
-  catch (error: any) {
-    if (error.code !== 'ResourceNotFound.Qualifier') {
-      throw error
+  if (scfVersion > 2) {
+    try {
+      await scfClient.DeleteFunction({
+        FunctionName: functionName,
+        Qualifier: String(scfVersion - 2),
+        Namespace: config.tencent.scf.function.Namespace,
+      })
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     }
-    console.log(`旧版本 ${scfVersion - 2} 不存在，无需清理。`)
+    catch (error: any) {
+      if (error.code !== 'ResourceNotFound.Qualifier') {
+        throw error
+      }
+    }
+  }
+  else {
+    consola.info(`旧版本 ${scfVersion - 2} 不存在，无需清理。`)
   }
 }

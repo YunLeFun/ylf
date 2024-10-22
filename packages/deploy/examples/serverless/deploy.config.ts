@@ -19,8 +19,12 @@ export default defineConfig({
       },
     },
     scf: {
+      alias: {
+        name: '$DEFAULT',
+      },
       function: {
-        FunctionName: 'yunlefun-api',
+        Namespace: 'YunLeFun',
+        FunctionName: 'ylf-test',
       },
     },
     tcr: {
@@ -28,7 +32,7 @@ export default defineConfig({
       region: 'ap-guangzhou',
       token: process.env.TENCENT_CLOUD_TCR_TOKEN,
       image: {
-        RepoName: 'yunlefun/yunlefun-api',
+        RepoName: 'yunlefun/ylf-test',
       },
     },
   },
