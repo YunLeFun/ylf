@@ -1,0 +1,8 @@
+{
+  "name": "example-serverless",
+  "version": "0.0.1",
+  "scripts": {
+    "deploy": "bunx deploy"
+  },
+  "dependencies": {}
+}

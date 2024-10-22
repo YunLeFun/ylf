@@ -3,7 +3,8 @@
   "type": "module",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "packages/deploy/examples/*"
   ],
   "scripts": {
     "lint": "eslint .",

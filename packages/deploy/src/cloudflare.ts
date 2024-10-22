@@ -95,7 +95,7 @@ export async function checkCFPagesDeployStatus(config: DeployConfig) {
  * 部署到 Cloudflare Pages 的相关逻辑
  * 譬如检测部署状态、执行部署完成的逻辑
  */
-export async function cfPagesDeploy(config: DeployConfig) {
+export async function deployCfPages(config: DeployConfig) {
   const deployment = await checkCFPagesDeployStatus(config)
   // send feishu message
   if (config.notification?.feishu?.enable) {

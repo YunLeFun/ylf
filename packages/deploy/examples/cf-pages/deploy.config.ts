@@ -1,5 +1,5 @@
 import consola from 'consola'
-import { defineConfig } from '../src'
+import { defineConfig } from '../../src'
 
 const yyjAccountId = 'ecac80638e001ece1b79584ffef5e65a'
 const ylfAccountId = '1c4b352e9e5f7d5655da259e1404ca80'
