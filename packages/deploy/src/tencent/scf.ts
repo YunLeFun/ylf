@@ -145,6 +145,7 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
       continue
     }
     else {
+      // TODO fix wait tcr build
       latestTagInfo = describeImageRes.Data?.TagInfo[0]
       dockerTag = latestTagInfo?.TagName || ''
       consola.success(

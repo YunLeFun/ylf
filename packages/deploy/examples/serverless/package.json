@@ -4,5 +4,9 @@
   "scripts": {
     "build": "bun build ./index.ts --outdir ./dist",
     "deploy": "bunx deploy"
+  },
+  "dependencies": {
+    "consola": "^3.2.3",
+    "date-fns": "^4.1.0"
   }
 }
