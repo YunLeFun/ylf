@@ -1,11 +1,10 @@
-import type { ClientConfig } from 'tencentcloud-sdk-nodejs/tencentcloud/common/interface'
 import type { TagInfo } from 'tencentcloud-sdk-nodejs/tencentcloud/services/tcr/v20190924/tcr_models'
 
-import type { DeployConfig, TencentDeployConfig } from '../types'
+import type { TencentDeployConfig } from '../types'
 import path from 'node:path'
 
 import process from 'node:process'
-import { consoleInnerInfo, sleep } from 'cilicili'
+import { consoleInnerInfo, lineStart, sleep } from 'cilicili'
 
 import consola from 'consola'
 import { colors } from 'consola/utils'
@@ -15,13 +14,12 @@ import fs from 'fs-extra'
 import gradient from 'gradient-string'
 import tencentcloud from 'tencentcloud-sdk-nodejs'
 
-const defaultClientConfig: ClientConfig = {
-  region: 'ap-shanghai',
-  credential: {
-    secretId: process.env.TENCENT_CLOUD_SECRET_ID,
-    secretKey: process.env.TENCENT_CLOUD_SECRET_KEY,
-  },
-}
+import { clearSCFVersions } from '../../../tencent-cloud'
+import { defaultTencentClientConfig } from '../../../tencent-cloud/config'
+import { TencentNotification } from './notification'
+
+export const cyanBlue = gradient(['cyan', 'blue'])
+export const tcrDomain = 'ccr.ccs.tencentyun.com'
 
 /**
  * 本地构建并推送 Docker 镜像
@@ -51,6 +49,7 @@ export async function buildAndPushDockerImage(options: {
 export async function waitSCFReady(options: {
   config: TencentDeployConfig
   scfClient: InstanceType<typeof tencentcloud.scf.v20180416.Client>
+  Qualifier?: string
 }) {
   let isFunctionReady = false
   const maxRetry = 12
@@ -61,7 +60,15 @@ export async function waitSCFReady(options: {
   while (!isFunctionReady) {
     const funRes = await scfClient.GetFunction({
       ...config.tencent.scf.function,
+      Qualifier: options.Qualifier,
     })
+    // funRes.CodeError
+    consoleInnerInfo(
+      '  ',
+      colors.dim('云函数状态:'),
+      colors.cyan(funRes.Status || ''),
+      colors.dim(funRes.StatusDesc || funRes.StatusReasons?.join(', ') || ''),
+    )
     if (funRes.Status === 'Active') {
       isFunctionReady = true
     }
@@ -78,21 +85,94 @@ export async function waitSCFReady(options: {
   return isFunctionReady
 }
 
-const cyanBlue = gradient(['cyan', 'blue'])
+/**
+ * 等待 Docker 镜像构建完成
+ */
+export async function waitDockerImageReady(options: {
+  config: TencentDeployConfig
+}) {
+  const { config } = options
+
+  // get commitId
+  const commitId = (await execa('git', ['rev-parse', 'HEAD'])).stdout.slice(0, 8)
+
+  // 查询 Docker 镜像
+  const TCRClient = tencentcloud.tcr.v20190924.Client
+  const tcrClient = new TCRClient(Object.assign(defaultTencentClientConfig, config.tencent.client))
+
+  // loop
+  // docker 最大超时 500s
+  const maxTimeout = config.docker?.timeout || 500 * 1000
+  const checkInterval = config.docker?.interval || 5 * 1000
+
+  const startCheckTime = Date.now()
+  const isTimeout = () => (Date.now() - startCheckTime) > maxTimeout
+
+  let latestTagInfo: TagInfo | undefined
+  let dockerTag = ''
+  while (!isTimeout()) {
+    consoleInnerInfo(`   ${colors.dim('检查 Docker 镜像构建状态...')}`)
+    const describeImageRes = await tcrClient.DescribeImagePersonal({
+      Limit: 1,
+      ...config.tencent.tcr.image,
+    })
+    if (describeImageRes.Data?.TagInfo.length === 0) {
+      consoleInnerInfo('⌛️ 等待镜像构建中...')
+      await sleep(checkInterval)
+      continue
+    }
+    latestTagInfo = describeImageRes.Data?.TagInfo[0]
+
+    if (latestTagInfo?.TagName.includes(commitId)) {
+      dockerTag = latestTagInfo?.TagName || ''
+      consola.success(
+        '🐳 最新镜像',
+        colors.magenta(latestTagInfo?.TagName || ''),
+        colors.gray(latestTagInfo?.DockerVersion || latestTagInfo?.Author || latestTagInfo?.Architecture || ''),
+        colors.yellow(latestTagInfo?.Size || latestTagInfo?.SizeByte ? `${(latestTagInfo.SizeByte / 1024 / 1024).toFixed(2)}MB` : ''),
+        colors.dim(latestTagInfo?.UpdateTime || ''),
+      )
+      // console.dir(latestTagInfo)
+      break
+    }
+    else {
+      consoleInnerInfo('⌛️ 等待新镜像构建中...')
+      await sleep(checkInterval)
+      continue
+    }
+  }
+
+  if (isTimeout()) {
+    consola.error('构建 Docker 镜像超时', 'https://console.cloud.tencent.com/tcr/repository')
+    throw new Error('构建 Docker 镜像超时')
+  }
+
+  return {
+    dockerTag,
+    latestTagInfo,
+  }
+}
 
 /**
  * 部署 SCF
  */
 export async function deployTencentSCF(config: TencentDeployConfig) {
-  // get commitId
-  const commitId = await execa('git', ['rev-parse', 'HEAD'])
   const version = formatDate(new Date(), 'yyyyMMdd-HHmm')
 
   console.log(cyanBlue('🚀 部署腾讯云 SCF...'))
+  console.log(`🔗 ${colors.underline('https://console.cloud.tencent.com/scf/list')}`)
   console.log()
 
+  let tNotification: TencentNotification | undefined
+  if (config.notification?.feishu?.enable) {
+    tNotification = new TencentNotification(config)
+  }
+
   const SCFClient = tencentcloud.scf.v20180416.Client
-  const scfClient = new SCFClient(Object.assign(defaultClientConfig, config.tencent.client))
+  const scfClient = new SCFClient(Object.assign(defaultTencentClientConfig, config.tencent.client))
+
+  await tNotification?.sendStartMsg()
+  console.log()
 
   // 防呆校验
   const dockerfilePath = path.resolve(process.cwd(), 'Dockerfile')
@@ -105,14 +185,12 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
 
   // 构建 docker 镜像，上传到 TCR
   const repoName = config.tencent.tcr.image.RepoName
-  let dockerTag = 'latest'
-  const tcrDomain = 'ccr.ccs.tencentyun.com'
   // build docker
   if (config.docker?.local) {
     consola.start('🐳 本地构建 Docker 镜像')
     await buildAndPushDockerImage({
       repoName,
-      dockerTag,
+      dockerTag: 'latest',
       registry: tcrDomain,
     })
   }
@@ -120,54 +198,14 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
     consola.start('🐳 远程构建 Docker 镜像')
   }
 
-  // 查询 Docker 镜像
-  const TCRClient = tencentcloud.tcr.v20190924.Client
-  const tcrClient = new TCRClient(Object.assign(defaultClientConfig, config.tencent.client))
-
-  // loop
-  // docker 最大超时 500s
-  const maxTimeout = config.docker?.timeout || 500 * 1000
-  const checkInterval = config.docker?.interval || 5 * 1000
-
-  const startCheckTime = Date.now()
-  const isTimeout = () => (Date.now() - startCheckTime) > maxTimeout
-  let latestTagInfo: TagInfo | undefined
-  while (!isTimeout()) {
-    consoleInnerInfo(`   ${colors.dim('检查 Docker 镜像构建状态...')}`)
-    const describeImageRes = await tcrClient.DescribeImagePersonal({
-      Limit: 1,
-      ...config.tencent.tcr.image,
-    })
-
-    if (describeImageRes.Data?.TagInfo.length === 0) {
-      consoleInnerInfo('  🐳 等待镜像构建中...')
-      await sleep(checkInterval)
-      continue
-    }
-    else {
-      // TODO fix wait tcr build
-      latestTagInfo = describeImageRes.Data?.TagInfo[0]
-      dockerTag = latestTagInfo?.TagName || ''
-      consola.success(
-        '🐳 最新镜像',
-        colors.magenta(latestTagInfo?.TagName || ''),
-        colors.gray(latestTagInfo?.DockerVersion || latestTagInfo?.Author || latestTagInfo?.Architecture || ''),
-        colors.yellow(latestTagInfo?.Size || latestTagInfo?.SizeByte ? `${(latestTagInfo.SizeByte / 1024 / 1024).toFixed(2)}MB` : ''),
-        colors.dim(latestTagInfo?.UpdateTime || ''),
-      )
-      // console.dir(latestTagInfo)
-      break
-    }
-  }
-
-  if (isTimeout()) {
-    consola.error('构建 Docker 镜像超时', 'https://console.cloud.tencent.com/tcr/repository')
-    throw new Error('构建 Docker 镜像超时')
-  }
+  // 等待 Docker 镜像构建完成
+  const { dockerTag, latestTagInfo } = await waitDockerImageReady({
+    config,
+  })
 
   // 准备发布云函数
-  const functionName = config.tencent.scf.function.FunctionName
-  if (!functionName) {
+  const { FunctionName, Namespace } = config.tencent.scf.function
+  if (!FunctionName) {
     throw new Error('请配置云函数名称 tenant.scf.function.FunctionName')
   }
   try {
@@ -180,7 +218,7 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
   }
   catch (error: any) {
     if (error.code === 'ResourceNotFound.Function') {
-      console.error(`云函数 ${functionName} 不存在，请手动创建。`)
+      console.error(`云函数 ${FunctionName} 不存在，请手动创建。`)
     }
     throw error
   }
@@ -188,13 +226,13 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
   console.log()
   consola.start('🚀 更新云函数代码', `${colors.dim(tcrDomain)}/${repoName}:${colors.magenta(dockerTag)}`)
   await scfClient.UpdateFunctionCode({
-    FunctionName: functionName,
-    Namespace: config.tencent.scf.function.Namespace,
+    FunctionName,
+    Namespace,
     Code: {
       ImageConfig: {
-        ImageType: config.tencent.tcr.type || 'personal',
+        ...config.tencent.scf.ImageConfig,
+        ImageType: config.tencent.scf.ImageConfig.ImageType || 'personal',
         ImageUri: `${tcrDomain}/${repoName}:${dockerTag}`,
-        ContainerImageAccelerate: true,
         Args: config.tencent.scf.args,
       },
     },
@@ -209,49 +247,83 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
   // 发布新版本
   console.log()
   consola.start('🚀 发布新版本')
+  const Description = `v${version} (image: ${repoName}:${dockerTag})`
   const versionRes = await scfClient.PublishVersion({
-    FunctionName: functionName,
-    Description: `v${version} (image: ${repoName}:${dockerTag})`,
-    Namespace: config.tencent.scf.function.Namespace,
+    Namespace,
+    FunctionName,
+    Description,
   })
+  consola.debug(versionRes)
+  consoleInnerInfo(
+    '  ',
+    colors.dim(`版本:`),
+    versionRes.FunctionVersion,
 
-  // 等待云函数变为可用状态
-  await waitSCFReady({
-    config,
-    scfClient,
-  })
+    lineStart,
+
+    colors.dim(`Runtime:`),
+    versionRes.Runtime,
+  )
 
   const functionVersion = versionRes.FunctionVersion || '1'
   const scfVersion = Number(functionVersion)
-  consoleInnerInfo(`   切换别名 ${colors.dim(config.tencent.scf.alias.name)} 流量`)
-  await scfClient.UpdateAlias({
-    Name: functionName,
-    FunctionName: functionName,
-    FunctionVersion: functionVersion,
-  })
-  consola.success('🚀 部署完成', `版本 ${functionVersion}`)
+  const aliasName = config.tencent.scf.alias.name
 
-  // 清理旧版本
-  // 注意：这里删除的是上上个版本。因为发布新版本后，可能访问旧版本的流量还会存在一段时间
-  // 如果直接删除上一个版本，可能会导致短时间内云函数无法正常访问，因此，只清理上上个版本
-  console.log()
-  consola.start('🧹 清理旧版本')
-  if (scfVersion > 2) {
-    try {
-      await scfClient.DeleteFunction({
-        FunctionName: functionName,
-        Qualifier: String(scfVersion - 2),
-        Namespace: config.tencent.scf.function.Namespace,
-      })
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // 等待发布版本云函数变为可用状态
+  await waitSCFReady({
+    config,
+    scfClient,
+    Qualifier: functionVersion,
+  })
+
+  // https://cloud.tencent.com/document/product/583/46241
+  if (aliasName) {
+    if (aliasName === '$DEFAULT') {
+      consoleInnerInfo(`   默认为 ${colors.cyan('$DEFAULT')} 别名，无需切换流量`)
     }
-    catch (error: any) {
-      if (error.code !== 'ResourceNotFound.Qualifier') {
-        throw error
-      }
+    else {
+      consoleInnerInfo(`   切换别名 ${colors.cyan(aliasName)} 流量`)
+      console.log({
+        Name: aliasName,
+        FunctionVersion: functionVersion,
+        Namespace,
+        FunctionName,
+      })
+      await scfClient.UpdateAlias({
+        Name: aliasName,
+        FunctionVersion: functionVersion,
+        Namespace,
+        FunctionName,
+      })
     }
   }
   else {
-    consola.info(`旧版本 ${scfVersion - 2} 不存在，无需清理。`)
+    consoleInnerInfo(`   无别名，默认使用 ${colors.cyan('$DEFAULT')}`)
+  }
+  consola.success('🚀 部署完成', `版本 ${colors.cyan(functionVersion)}`)
+
+  await tNotification?.sendDeployMsg({
+    Description,
+  })
+
+  if (scfVersion > 2) {
+    await clearSCFVersions({
+      interactive: false,
+      scfClient,
+      scfVersion: scfVersion - 2,
+      Namespace,
+      FunctionName,
+    })
+  }
+  else {
+    consola.info(`旧版本 ${scfVersion || ''} 不存在，无需清理。`)
+  }
+
+  // notification
+  if (config.notification?.feishu?.enable) {
+    await tNotification?.sendFullMsg({
+      functionVersion,
+      latestTagInfo,
+    })
   }
 }

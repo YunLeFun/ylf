@@ -1,5 +1,5 @@
 import type { Stage } from 'cloudflare/resources/pages/projects/projects.mjs'
-import type { DeployConfig } from './types'
+import type { CloudflarePagesDeployConfig, DeployConfig } from './types'
 import { consoleInfo, errorStart, sleep } from 'cilicili'
 import Cloudflare, { type ClientOptions } from 'cloudflare'
 
@@ -18,7 +18,7 @@ export function initCloudflareClient(config: ClientOptions) {
 /**
  * 检查 Cloudflare Pages 部署状态
  */
-export async function checkCFPagesDeployStatus(config: DeployConfig) {
+export async function checkCFPagesDeployStatus(config: CloudflarePagesDeployConfig) {
   const cfConfig = config?.cloudflare
   const client = initCloudflareClient(cfConfig?.client || {})
   // await client.accounts.list({
@@ -95,7 +95,7 @@ export async function checkCFPagesDeployStatus(config: DeployConfig) {
  * 部署到 Cloudflare Pages 的相关逻辑
  * 譬如检测部署状态、执行部署完成的逻辑
  */
-export async function deployCfPages(config: DeployConfig) {
+export async function deployCfPages(config: CloudflarePagesDeployConfig) {
   const deployment = await checkCFPagesDeployStatus(config)
   // send feishu message
   if (config.notification?.feishu?.enable) {

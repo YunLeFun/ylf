@@ -5,6 +5,7 @@ import type { Argv } from 'yargs'
 
 import consola from 'consola'
 import { colors } from 'consola/utils'
+import { clearSCFVersionsByArgv } from './scf'
 import { getTEOZoneDnsList, getTEOZoneList, runTEOTask } from './teo'
 
 /**
@@ -103,6 +104,28 @@ export async function registerTencentCloudCommand(args: Argv) {
           })
         },
       )
+        .command('scf', '云函数', () => {
+          return args.command('clear', '清理 SCF 版本', () => {
+            return args
+              .option('interactive', {
+                alias: 'i',
+                type: 'boolean',
+                description: '交互模式',
+              })
+              .option('Namespace', {
+                alias: 'n',
+                type: 'string',
+                description: '命名空间',
+              })
+              .option('FunctionName', {
+                alias: 'f',
+                type: 'string',
+                description: '函数名称',
+              })
+          }, async (argv) => {
+            clearSCFVersionsByArgv(argv)
+          })
+        })
     },
     async () => {
 

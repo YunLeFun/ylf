@@ -24,11 +24,14 @@ export default defineConfig({
       },
       function: {
         Namespace: 'YunLeFun',
-        FunctionName: 'ylf-test',
+        FunctionName: 'test',
+      },
+      ImageConfig: {
+        ImageType: 'personal',
+        ContainerImageAccelerate: false,
       },
     },
     tcr: {
-      type: 'personal',
       region: 'ap-guangzhou',
       token: process.env.TENCENT_CLOUD_TCR_TOKEN,
       image: {

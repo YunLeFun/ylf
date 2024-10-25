@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env vite-node --script
 
 import { run } from '../src'
 

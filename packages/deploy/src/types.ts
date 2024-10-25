@@ -1,6 +1,6 @@
 import type { ClientOptions } from 'cloudflare'
 import type { ClientConfig } from 'tencentcloud-sdk-nodejs/tencentcloud/common/interface'
-import type { GetFunctionRequest } from 'tencentcloud-sdk-nodejs/tencentcloud/services/scf/v20180416/scf_models'
+import type { GetFunctionRequest, ImageConfig } from 'tencentcloud-sdk-nodejs/tencentcloud/services/scf/v20180416/scf_models'
 import type { DescribeImagePersonalRequest } from 'tencentcloud-sdk-nodejs/tencentcloud/services/tcr/v20190924/tcr_models'
 
 export interface BaseDeployConfig {
@@ -130,20 +130,22 @@ export interface TencentDeployConfig extends BaseDeployConfig {
          * 别名名称
          * 发布版本后，会将此别名的所属流量切换到最新版本上
          */
-        name: string
+        name?: string
       }
+
+      /**
+       * - ImageType 类型
+       *   - personal 个人版
+       *   - enterprise 企业版（付费）
+       * - ContainerImageAccelerate 是否使用容器镜像加速服务
+       */
+      ImageConfig: Partial<ImageConfig>
     }
 
     /**
      * Tencent Cloud Registry
      */
     tcr: {
-      /**
-       * 类型
-       * - personal 个人版
-       * - enterprise 企业版（付费）
-       */
-      type: 'personal' | 'enterprise'
       /**
        * region
        * @default ap-shanghai
