@@ -1,7 +1,7 @@
-import type { ClientConfig } from 'tencentcloud-sdk-nodejs/tencentcloud/common/interface'
+import type { TencentClientConfig } from '../../../../tencent-cloud/config'
 import process from 'node:process'
 
-export const clientConfig: ClientConfig = {
+export const clientConfig: TencentClientConfig = {
   region: 'ap-shanghai',
   credential: {
     secretId: process.env.TENCENT_CLOUD_SECRET_ID,

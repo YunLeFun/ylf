@@ -1,5 +1,5 @@
-#!/usr/bin/env vite-node --script
+#!/usr/bin/env node
 
-import { run } from '../src'
+import { run } from '../dist'
 
 run()

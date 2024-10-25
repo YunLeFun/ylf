@@ -18,7 +18,6 @@ import { clearSCFVersions } from '../../../tencent-cloud'
 import { defaultTencentClientConfig } from '../../../tencent-cloud/config'
 import { TencentNotification } from './notification'
 
-export const cyanBlue = gradient(['cyan', 'blue'])
 export const tcrDomain = 'ccr.ccs.tencentyun.com'
 
 /**
@@ -159,7 +158,7 @@ export async function waitDockerImageReady(options: {
 export async function deployTencentSCF(config: TencentDeployConfig) {
   const version = formatDate(new Date(), 'yyyyMMdd-HHmm')
 
-  console.log(cyanBlue('🚀 部署腾讯云 SCF...'))
+  console.log(gradient(['cyan', 'blue'])('🚀 部署腾讯云 SCF...'))
   console.log(`🔗 ${colors.underline('https://console.cloud.tencent.com/scf/list')}`)
   console.log()
 
@@ -175,7 +174,7 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
   console.log()
 
   // 防呆校验
-  const dockerfilePath = path.resolve(process.cwd(), 'Dockerfile')
+  const dockerfilePath = path.resolve(config.docker?.Dockerfile || process.cwd(), 'Dockerfile')
   const isDockerfileExists = await fs.exists(dockerfilePath)
 
   if (!isDockerfileExists) {

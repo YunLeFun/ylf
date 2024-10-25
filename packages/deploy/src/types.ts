@@ -1,7 +1,7 @@
 import type { ClientOptions } from 'cloudflare'
-import type { ClientConfig } from 'tencentcloud-sdk-nodejs/tencentcloud/common/interface'
 import type { GetFunctionRequest, ImageConfig } from 'tencentcloud-sdk-nodejs/tencentcloud/services/scf/v20180416/scf_models'
 import type { DescribeImagePersonalRequest } from 'tencentcloud-sdk-nodejs/tencentcloud/services/tcr/v20190924/tcr_models'
+import type { TencentClientConfig } from '../../tencent-cloud/config'
 
 export interface BaseDeployConfig {
   /**
@@ -38,6 +38,10 @@ export interface BaseDeployConfig {
    * docker
    */
   docker?: {
+    /**
+     * Dockerfile 路径
+     */
+    Dockerfile?: string
     /**
      * 是否本地构建
      */
@@ -109,7 +113,7 @@ export interface TencentDeployConfig extends BaseDeployConfig {
      * region @default ap-shanghai
      * credential 默认读取环境变量 TENCENT_CLOUD_SECRET_ID 和 TENCENT_CLOUD_SECRET_KEY
      */
-    client: ClientConfig
+    client: TencentClientConfig
 
     /**
      * SCF 配置
