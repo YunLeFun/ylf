@@ -1,7 +1,7 @@
 {
   "name": "@yunlefun/deploy",
   "type": "module",
-  "version": "0.0.4",
+  "version": "0.0.11",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -13,11 +13,11 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "bin": {
-    "deploy": "./bin/index.js"
+    "deploy": "./bin/index.mjs"
   },
   "files": [
     "bin",
-    "src"
+    "dist"
   ],
   "scripts": {
     "build": "unbuild",
@@ -36,7 +36,7 @@
     "consola": "^3.2.3",
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.5",
-    "execa": "^9.4.1",
+    "execa": "^9.5.0",
     "fs-extra": "^11.2.0",
     "gradient-string": "^3.0.0",
     "tencentcloud-sdk-nodejs": "^4.0.962",

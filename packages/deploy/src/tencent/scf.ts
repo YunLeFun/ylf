@@ -174,7 +174,7 @@ export async function deployTencentSCF(config: TencentDeployConfig) {
   console.log()
 
   // 防呆校验
-  const dockerfilePath = path.resolve(config.docker?.Dockerfile || process.cwd(), 'Dockerfile')
+  const dockerfilePath = config.docker?.Dockerfile || path.resolve(process.cwd(), 'Dockerfile')
   const isDockerfileExists = await fs.exists(dockerfilePath)
 
   if (!isDockerfileExists) {
