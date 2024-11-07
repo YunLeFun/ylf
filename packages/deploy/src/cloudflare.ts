@@ -1,5 +1,5 @@
 import type { Stage } from 'cloudflare/resources/pages/projects/projects.mjs'
-import type { CloudflarePagesDeployConfig, DeployConfig } from './types'
+import type { CloudflarePagesDeployConfig } from './types'
 import { consoleInfo, errorStart, sleep } from 'cilicili'
 import Cloudflare, { type ClientOptions } from 'cloudflare'
 

@@ -17,8 +17,7 @@ import tencentcloud from 'tencentcloud-sdk-nodejs'
 import { clearSCFVersions } from '../../../tencent-cloud'
 import { defaultTencentClientConfig } from '../../../tencent-cloud/config'
 import { TencentNotification } from './notification'
-
-export const tcrDomain = 'ccr.ccs.tencentyun.com'
+import { getConsoleTCRUrl, tcrDomain } from './tcr'
 
 /**
  * 本地构建并推送 Docker 镜像
@@ -110,7 +109,7 @@ export async function waitDockerImageReady(options: {
   let latestTagInfo: TagInfo | undefined
   let dockerTag = ''
   while (!isTimeout()) {
-    consoleInnerInfo(`   ${colors.dim('检查 Docker 镜像构建状态...')}`)
+    consoleInnerInfo(`   ${colors.dim('检查镜像构建状态...')} ${getConsoleTCRUrl(config.tencent.tcr.image.RepoName)}`)
     const describeImageRes = await tcrClient.DescribeImagePersonal({
       Limit: 1,
       ...config.tencent.tcr.image,

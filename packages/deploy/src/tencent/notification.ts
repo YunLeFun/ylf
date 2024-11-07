@@ -2,7 +2,7 @@ import type { TagInfo } from 'tencentcloud-sdk-nodejs/tencentcloud/services/tcr/
 import type { TencentDeployConfig } from '../types'
 import consola from 'consola'
 import { sendFeishuMessageByWebhook, type SendFeishuMessageOptions } from '../feishu'
-import { tcrDomain } from './scf'
+import { getConsoleTCRUrl } from './tcr'
 
 export class TencentNotification {
   config: TencentDeployConfig
@@ -144,7 +144,7 @@ export class TencentNotification {
     }
 
     const fullMsg = `**当前版本**: ${functionVersion}
-**镜像标签**: [${latestTagInfo.TagName}](https://console.cloud.tencent.com/tcr/repository/ccr/ccr/${config.tencent.tcr.image.RepoName}/1/tagList)
+**镜像标签**: [${latestTagInfo.TagName}](${getConsoleTCRUrl(config.tencent.tcr.image.RepoName)})
 **镜像大小**: ${latestTagInfo.Size} (${latestTagInfo.Architecture})
 **更新时间**: ${latestTagInfo.UpdateTime}
   `
