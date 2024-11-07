@@ -1,6 +1,6 @@
 {
   "name": "cilicili",
-  "version": "0.0.4",
+  "version": "0.1.0",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -17,7 +17,8 @@
   "scripts": {
     "build": "unbuild",
     "dev": "unbuild --stub",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "release": "bumpp --all && npm publish"
   },
   "dependencies": {
     "consola": "^3.2.3"
