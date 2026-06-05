@@ -73,6 +73,12 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # deploy 等包会把同仓的 cilicili 内联进产物（读取其 dist），需先构建这个共享内部库
+      - name: Build shared lib (cilicili)
+        if: steps.check.outputs.skip == 'false'
+        working-directory: packages/cilicili
+        run: bun run build
+
       - name: Build
         if: steps.check.outputs.skip == 'false'
         working-directory: ${{ steps.pkg.outputs.dir }}
