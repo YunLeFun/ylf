@@ -13,7 +13,7 @@
     "consola": "^3.2.3",
     "dotenv": "^16.4.5",
     "pacote": "^20.0.0",
-    "tencentcloud-sdk-nodejs": "^4.0.969",
+    "tencentcloud-sdk-nodejs": "^4.0.970",
     "yargs": "^17.7.2"
   },
   "devDependencies": {

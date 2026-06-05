@@ -11,6 +11,7 @@ export const RAW_SYMBOLS = {
   info: 'ℹ',
   warn: '⚠',
   error: '✖',
+
   line: '│',
   end: '└',
 }
@@ -20,16 +21,28 @@ export const RAW_SYMBOLS = {
  * @example colors.green(symbols.success)
  */
 export const COLORFUL_SYMBOLS = {
+  block: colors.bold(colors.dim(RAW_SYMBOLS.block)),
+  start: colors.magenta(RAW_SYMBOLS.start),
+  uncheck: colors.gray(RAW_SYMBOLS.uncheck),
+  pointer: colors.cyan(RAW_SYMBOLS.pointer),
+
   success: colors.green(RAW_SYMBOLS.success),
   info: colors.blue(RAW_SYMBOLS.info),
   warn: colors.yellow(RAW_SYMBOLS.warn),
   error: colors.red(RAW_SYMBOLS.error),
 
   line: colors.dim(RAW_SYMBOLS.line),
-  block: colors.bold(colors.dim(RAW_SYMBOLS.block)),
-  uncheck: colors.gray(RAW_SYMBOLS.uncheck),
-  pointer: colors.cyan(RAW_SYMBOLS.pointer),
 }
+
+/**
+ * 行首彩色符号，用于 `console.log(xxxStart, ...args)`
+ * @example console.log(errorStart, '执行失败') // ✖ 执行失败
+ */
+export const lineStart = COLORFUL_SYMBOLS.line
+export const successStart = COLORFUL_SYMBOLS.success
+export const infoStart = COLORFUL_SYMBOLS.info
+export const warnStart = COLORFUL_SYMBOLS.warn
+export const errorStart = COLORFUL_SYMBOLS.error
 
 /**
  * console.log(lineStart, ...args)

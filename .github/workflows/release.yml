@@ -1,0 +1,95 @@
+name: Release
+
+# 发布 npm 包。两种触发方式：
+#  1) 推送 tag：<包名>@<版本>，例如 `@yunlefun/deploy@0.0.12`、`cilicili@0.1.2`
+#  2) 手动：Actions → Release → Run workflow，选择要发布的包目录
+#
+# 用 npm Trusted Publishing（OIDC，免 token）+ provenance 供应链溯源。
+# 需先在 npmjs.com 各包设置里把本仓库的 release.yml 配为 trusted publisher
+# （见 .github/workflows/RELEASING.md）。
+
+on:
+  push:
+    tags:
+      - '*@*'
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 要发布的包目录（packages/ 下）
+        required: true
+        type: choice
+        default: deploy
+        options:
+          - deploy
+          - cilicili
+
+permissions:
+  contents: read
+  id-token: write # npm provenance 需要
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # Trusted Publishing (OIDC) 需要 npm >= 11.5.1
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
+      - name: Install
+        run: bun install
+
+      # 确定要发布的包目录：手动触发用输入；tag 触发从 <name>@<version> 反查
+      - name: Resolve package dir
+        id: pkg
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            dir="packages/${{ inputs.package }}"
+          else
+            name="${GITHUB_REF_NAME%@*}"
+            dir=$(node -e "const fs=require('fs');for(const d of fs.readdirSync('packages')){try{if(require('./packages/'+d+'/package.json').name===process.argv[1]){console.log('packages/'+d);process.exit(0)}}catch{}}process.exit(1)" "$name")
+          fi
+          [ -n "$dir" ] && [ -f "$dir/package.json" ] || { echo "::error::无法定位包目录"; exit 1; }
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "name=$(node -p "require('./$dir/package.json').name")" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p "require('./$dir/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # 若该版本已发布则跳过，保证可重复运行
+      - name: Skip if already published
+        id: check
+        run: |
+          if npm view "${{ steps.pkg.outputs.name }}@${{ steps.pkg.outputs.version }}" version >/dev/null 2>&1; then
+            echo "已存在 ${{ steps.pkg.outputs.name }}@${{ steps.pkg.outputs.version }}，跳过发布"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        if: steps.check.outputs.skip == 'false'
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        run: bun run build
+
+      # 用 bun pm pack 打包：会把 workspace:* 协议转成真实版本号（npm 不认 workspace:）
+      - name: Pack
+        if: steps.check.outputs.skip == 'false'
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        run: bun pm pack
+
+      # OIDC trusted publishing：无需 token，npm 自动用 id-token 换取发布凭证
+      - name: Publish
+        if: steps.check.outputs.skip == 'false'
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        run: npm publish "$(ls *.tgz)" --access public
+
+      - name: Summary
+        if: steps.check.outputs.skip == 'false'
+        run: echo "✅ 已发布 ${{ steps.pkg.outputs.name }}@${{ steps.pkg.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"

@@ -1,7 +1,12 @@
 {
   "name": "@yunlefun/deploy",
   "type": "module",
-  "version": "0.0.11",
+  "version": "0.0.12",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YunLeFun/ylf.git",
+    "directory": "packages/deploy"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -28,10 +33,9 @@
     "test": "cd test && bunx deploy"
   },
   "dependencies": {
-    "@larksuiteoapi/node-sdk": "^1.38.0",
+    "@larksuiteoapi/node-sdk": "^1.66.1",
     "axios": "^1.7.7",
     "c12": "^2.0.1",
-    "cilicili": "workspace:*",
     "cloudflare": "^3.5.0",
     "consola": "^3.2.3",
     "date-fns": "^4.1.0",
@@ -39,12 +43,12 @@
     "execa": "^9.5.1",
     "fs-extra": "^11.2.0",
     "gradient-string": "^3.0.0",
-    "tencentcloud-sdk-nodejs": "^4.0.969",
-    "vite-node": "^2.1.4"
+    "tencentcloud-sdk-nodejs": "^4.0.970"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
     "@types/gradient-string": "^1.1.6",
+    "cilicili": "workspace:*",
     "unbuild": "^2.0.0"
   }
 }

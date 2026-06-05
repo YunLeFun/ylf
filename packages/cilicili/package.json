@@ -1,6 +1,11 @@
 {
   "name": "cilicili",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YunLeFun/ylf.git",
+    "directory": "packages/cilicili"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -18,9 +23,13 @@
     "build": "unbuild",
     "dev": "unbuild --stub",
     "prepublishOnly": "npm run build",
-    "release": "bumpp --all && npm publish"
+    "release": "bumpp && npm publish",
+    "test": "vitest"
   },
   "dependencies": {
     "consola": "^3.2.3"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8"
   }
 }
