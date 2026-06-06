@@ -121,13 +121,13 @@ export async function waitDockerImageReady(options: {
     }
     latestTagInfo = describeImageRes.Data?.TagInfo[0]
 
-    if (latestTagInfo?.TagName.includes(commitId)) {
+    if (latestTagInfo?.TagName?.includes(commitId)) {
       dockerTag = latestTagInfo?.TagName || ''
       consola.success(
         '🐳 最新镜像',
         colors.magenta(latestTagInfo?.TagName || ''),
         colors.gray(latestTagInfo?.DockerVersion || latestTagInfo?.Author || latestTagInfo?.Architecture || ''),
-        colors.yellow(latestTagInfo?.Size || latestTagInfo?.SizeByte ? `${(latestTagInfo.SizeByte / 1024 / 1024).toFixed(2)}MB` : ''),
+        colors.yellow(latestTagInfo?.Size || latestTagInfo?.SizeByte ? `${((latestTagInfo.SizeByte ?? 0) / 1024 / 1024).toFixed(2)}MB` : ''),
         colors.dim(latestTagInfo?.UpdateTime || ''),
       )
       // console.dir(latestTagInfo)

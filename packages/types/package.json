@@ -27,5 +27,8 @@
     "build": "unbuild",
     "dev": "unbuild --stub",
     "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "unbuild": "^2.0.0"
   }
 }

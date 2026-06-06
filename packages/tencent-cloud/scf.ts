@@ -48,20 +48,16 @@ export async function clearSCFVersions(options: {
     const namespaces = await scfClient.ListNamespaces({})
     Namespace = await consola.prompt('Namespace', {
       type: 'select',
-      options: namespaces.Namespaces?.map((ns) => {
-        return ns.Name
-      }) || [],
-    })
+      options: namespaces.Namespaces?.map(ns => ns.Name).filter((n): n is string => Boolean(n)) || [],
+    }) as string
 
     const functions = await scfClient.ListFunctions({
       Namespace,
     })
     FunctionName = await consola.prompt('FunctionName', {
       type: 'select',
-      options: functions.Functions?.map((fn) => {
-        return fn.FunctionName
-      }) || [],
-    })
+      options: functions.Functions?.map(fn => fn.FunctionName).filter((n): n is string => Boolean(n)) || [],
+    }) as string
 
     const versions = await scfClient.ListVersionByFunction({
       Namespace,
@@ -72,8 +68,8 @@ export async function clearSCFVersions(options: {
       type: 'multiselect',
       options: versions.Versions?.map((v) => {
         return {
-          label: `${colors.cyan(v.Version)} ${v.Description}`,
-          value: v.Version,
+          label: `${colors.cyan(v.Version || '')} ${v.Description}`,
+          value: v.Version || '',
           hint: v.Version === '$LATEST' ? colors.dim('默认版本不能被删除') : '',
         }
       }) || [],

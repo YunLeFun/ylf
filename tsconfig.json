@@ -24,5 +24,11 @@
     "noEmit": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true
-  }
+  },
+  // packages/rs 是 Rust 包，无需 tsc
+  "exclude": [
+    "**/node_modules",
+    "**/dist",
+    "packages/rs"
+  ]
 }

@@ -6,4 +6,4 @@ Cli tool for YunLeFun.
 
 GitHub Actions CI for cargo publish & release.
 
-- Bun package
+- pnpm monorepo

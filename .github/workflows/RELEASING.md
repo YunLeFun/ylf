@@ -37,10 +37,10 @@ git tag '@yunlefun/deploy@0.0.12' && git push origin '@yunlefun/deploy@0.0.12'
 
 ## 工作流做了什么
 
-1. `bun install` → 定位包目录（手动输入或从 tag `<name>@<version>` 反查）；
+1. `pnpm install` → 定位包目录（手动输入或从 tag `<name>@<version>` 反查）；
 2. 若该版本已在 registry 上存在则**跳过**（可重复运行）；
-3. `bun run build` 构建；
-4. `bun pm pack` 打包 —— 会把 `workspace:*` 协议转成真实版本号（`npm publish` 不认 `workspace:`）；
+3. `pnpm run build` 构建；
+4. `pnpm pack` 打包 —— 会把 `workspace:*` 协议转成真实版本号（`npm publish` 不认 `workspace:`）；
 5. `npm publish *.tgz --access public` —— OIDC 自动鉴权 + provenance。
 
 要点：

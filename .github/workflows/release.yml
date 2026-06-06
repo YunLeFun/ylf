@@ -35,19 +35,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+          cache: pnpm
 
       # Trusted Publishing (OIDC) 需要 npm >= 11.5.1
       - name: Upgrade npm
         run: npm install -g npm@latest
 
       - name: Install
-        run: bun install
+        run: pnpm install --frozen-lockfile
 
       # 确定要发布的包目录：手动触发用输入；tag 触发从 <name>@<version> 反查
       - name: Resolve package dir
@@ -78,25 +79,24 @@ jobs:
       # deploy 等包会把同仓的 cilicili 内联进产物（读取其 dist），需先构建这个共享内部库
       - name: Build shared lib (cilicili)
         if: steps.check.outputs.skip == 'false'
-        working-directory: packages/cilicili
-        run: bun run build
+        run: pnpm --filter cilicili build
 
-      # ylf 等 bun 风格包直接发布 TS 源码、没有 build 脚本，这里按需跳过
+      # ylf 等包直接发布 TS 源码、没有 build 脚本，这里按需跳过
       - name: Build
         if: steps.check.outputs.skip == 'false'
         working-directory: ${{ steps.pkg.outputs.dir }}
         run: |
           if node -e "process.exit(require('./package.json').scripts?.build ? 0 : 1)"; then
-            bun run build
+            pnpm run build
           else
             echo "无 build 脚本，跳过构建"
           fi
 
-      # 用 bun pm pack 打包：会把 workspace:* 协议转成真实版本号（npm 不认 workspace:）
+      # 用 pnpm pack 打包：会把 workspace:* 协议转成真实版本号（npm 不认 workspace:）
       - name: Pack
         if: steps.check.outputs.skip == 'false'
         working-directory: ${{ steps.pkg.outputs.dir }}
-        run: bun pm pack
+        run: pnpm pack
 
       # OIDC trusted publishing：无需 token，npm 自动用 id-token 换取发布凭证
       - name: Publish

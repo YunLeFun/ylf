@@ -30,6 +30,7 @@
     "consola": "^3.2.3"
   },
   "devDependencies": {
+    "unbuild": "^2.0.0",
     "vitest": "^2.1.8"
   }
 }

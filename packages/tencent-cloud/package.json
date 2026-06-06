@@ -1,0 +1,11 @@
+{
+  "name": "@yunlefun/tencent-cloud",
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "description": "腾讯云 SCF 等内部共享逻辑，被 deploy/ylf 以相对路径引用并在构建时内联",
+  "dependencies": {
+    "consola": "^3.2.3",
+    "tencentcloud-sdk-nodejs": "^4.0.970"
+  }
+}

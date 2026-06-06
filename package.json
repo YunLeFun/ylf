@@ -2,12 +2,9 @@
   "name": "@yunlefun/monorepo",
   "type": "module",
   "private": true,
-  "workspaces": [
-    "packages/*",
-    "packages/deploy/examples/*"
-  ],
+  "packageManager": "pnpm@10.13.1",
   "scripts": {
-    "build": "pnpm -C packages/cilicili build",
+    "build": "pnpm --filter cilicili --filter @yunlefun/types --filter @yunlefun/deploy build",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest"
@@ -21,6 +18,7 @@
     "@unocss/eslint-plugin": "^0.64.0",
     "bumpp": "^9.8.1",
     "eslint": "^9.14.0",
-    "eslint-plugin-format": "^0.1.2"
+    "eslint-plugin-format": "^0.1.2",
+    "vitest": "^2.1.8"
   }
 }

@@ -9,6 +9,12 @@
   },
   "module": "index.ts",
   "bin": "bin/index.js",
+  "files": [
+    "README.md",
+    "bin",
+    "index.ts",
+    "src"
+  ],
   "peerDependencies": {
     "typescript": "^5.0.0"
   },

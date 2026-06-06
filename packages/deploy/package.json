@@ -28,9 +28,9 @@
     "build": "unbuild",
     "dev": "unbuild --stub",
     "prepublishOnly": "npm run build",
-    "release": "bun publish",
-    "release:local": "bun publish",
-    "test": "cd test && bunx deploy"
+    "release": "pnpm publish",
+    "release:local": "pnpm publish",
+    "test": "cd test && pnpm exec deploy"
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.66.1",
