@@ -14,7 +14,7 @@ Publishing（OIDC，免 token）**：CI 凭 GitHub 的 OIDC id-token 直接换�
 - Workflow filename：`release.yml`
 - Environment：留空
 
-对 `cilicili` 等其它要发的包重复一次。
+对 `cilicili`、`ylf` 等其它要发的包重复一次（每个包独立配置一次）。
 
 > 包名首次创建需是 public：工作流已带 `--access public`。
 

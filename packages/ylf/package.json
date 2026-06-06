@@ -2,6 +2,11 @@
   "name": "ylf",
   "type": "module",
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YunLeFun/ylf.git",
+    "directory": "packages/ylf"
+  },
   "module": "index.ts",
   "bin": "bin/index.js",
   "peerDependencies": {

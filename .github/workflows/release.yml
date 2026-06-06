@@ -22,6 +22,8 @@ on:
         options:
           - deploy
           - cilicili
+          - ylf
+          - types
 
 permissions:
   contents: read
@@ -79,10 +81,16 @@ jobs:
         working-directory: packages/cilicili
         run: bun run build
 
+      # ylf 等 bun 风格包直接发布 TS 源码、没有 build 脚本，这里按需跳过
       - name: Build
         if: steps.check.outputs.skip == 'false'
         working-directory: ${{ steps.pkg.outputs.dir }}
-        run: bun run build
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.build ? 0 : 1)"; then
+            bun run build
+          else
+            echo "无 build 脚本，跳过构建"
+          fi
 
       # 用 bun pm pack 打包：会把 workspace:* 协议转成真实版本号（npm 不认 workspace:）
       - name: Pack
