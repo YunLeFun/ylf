@@ -26,14 +26,17 @@ on:
           - types
 
 permissions:
-  contents: read
+  contents: write # changelogithub 创建 GitHub Release 需要
   id-token: write # npm provenance 需要
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
+      # changelogithub 需要完整历史与全部 tag 才能计算两 tag 间的提交
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
 
@@ -107,3 +110,11 @@ jobs:
       - name: Summary
         if: steps.check.outputs.skip == 'false'
         run: echo "✅ 已发布 ${{ steps.pkg.outputs.name }}@${{ steps.pkg.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+
+      # 仅 tag 触发：按 conventional commits 自动创建/更新该 tag 的 GitHub Release
+      # （仓库级：纳入与上一个 tag 之间的全部提交）。手动触发无 tag，故跳过。
+      - name: Create GitHub Release (changelog)
+        if: github.event_name == 'push'
+        run: pnpm exec changelogithub
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

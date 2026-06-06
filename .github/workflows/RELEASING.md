@@ -41,13 +41,18 @@ git tag '@yunlefun/deploy@0.0.12' && git push origin '@yunlefun/deploy@0.0.12'
 2. 若该版本已在 registry 上存在则**跳过**（可重复运行）；
 3. `pnpm run build` 构建；
 4. `pnpm pack` 打包 —— 会把 `workspace:*` 协议转成真实版本号（`npm publish` 不认 `workspace:`）；
-5. `npm publish *.tgz --access public` —— OIDC 自动鉴权 + provenance。
+5. `npm publish *.tgz --access public` —— OIDC 自动鉴权 + provenance；
+6. **仅 tag 触发**时，`changelogithub` 按 conventional commits 自动创建/更新该 tag 的
+   **GitHub Release**（仓库级：纳入与上一个 tag 之间的全部提交，按 feat/fix 等分类）。
 
 要点：
 
-- 工作流权限含 `id-token: write`（OIDC 必需）；
+- 工作流权限含 `id-token: write`（OIDC 必需）、`contents: write`（建 Release 必需）；
 - 用 `npm@latest`（Trusted Publishing 需 npm ≥ 11.5.1）；
-- 各包 `package.json` 含 `repository` 字段（provenance 必需）。
+- 各包 `package.json` 含 `repository` 字段（provenance 必需）；
+- changelog 需要完整 git 历史，故 `checkout` 用 `fetch-depth: 0`；
+- 自动 changelog 只在**推 tag**时生成（手动 `workflow_dispatch` 无 tag，会跳过该步——
+  想要 Release 就用推 tag 的方式发布）。
 
 ## 回退方案：Automation Token
 

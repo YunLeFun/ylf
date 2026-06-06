@@ -17,6 +17,7 @@
     "@types/bun": "latest",
     "@unocss/eslint-plugin": "^0.64.0",
     "bumpp": "^9.8.1",
+    "changelogithub": "^14.0.0",
     "eslint": "^9.14.0",
     "eslint-plugin-format": "^0.1.2",
     "vite": "^7.3.0",
