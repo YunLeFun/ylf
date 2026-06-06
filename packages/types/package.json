@@ -1,0 +1,31 @@
+{
+  "name": "@yunlefun/types",
+  "type": "module",
+  "version": "0.0.1",
+  "description": "云乐坊（Yunle.fun）跨端共享的 TypeScript 类型定义",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YunLeFun/ylf.git",
+    "directory": "packages/types"
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "unbuild",
+    "dev": "unbuild --stub",
+    "prepublishOnly": "npm run build"
+  }
+}
