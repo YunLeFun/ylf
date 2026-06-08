@@ -7,17 +7,21 @@ export interface YlfAppInfo {
    */
   id: string
   /**
-   * 应用颜色
+   * 应用主题色（十六进制，默认 #007AFF）
+   *
+   * 对齐 CloudBase apps 集合字段命名（原 color）。
    */
-  color: string
+  themeColor: string
   /**
-   * 应用图标
+   * 应用 Logo 图片 URL（优先于 emoji 展示）
+   *
+   * 对齐 CloudBase apps 集合字段命名（原 icon）。
    */
-  icon?: string
+  logo?: string
   /**
    * emoji
    *
-   * icon 不存在时，emoji 替代 icon
+   * logo 不存在时，emoji 替代 logo
    */
   emoji: string
   /**
@@ -29,9 +33,9 @@ export interface YlfAppInfo {
    */
   slug: string
   /**
-   * 应用 URL
+   * 应用网址（对齐 CloudBase apps 集合字段命名，原 url）
    */
-  url: string
+  websiteUrl: string
   /**
    * 应用描述
    */
