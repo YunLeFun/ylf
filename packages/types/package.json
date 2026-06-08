@@ -1,7 +1,7 @@
 {
   "name": "@yunlefun/types",
   "type": "module",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "云乐坊（Yunle.fun）跨端共享的 TypeScript 类型定义",
   "license": "MIT",
   "repository": {
