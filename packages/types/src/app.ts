@@ -45,21 +45,34 @@ export interface YlfAppInfo {
    */
   category?: string
   /**
-   * 评分
+   * 评分（0-5）。
+   *
+   * 真实来源为评论系统聚合（reviewSummary）；此字段仅作列表展示的去规范化缓存，
+   * 详情页一律以评论实时聚合为准。缺省表示暂无评分。
    */
   rating?: number
   /**
-   * 下载量
+   * 评分人数（已发布评论数）。与 `rating` 同为评论聚合的去规范化缓存。
+   * 列表据此判断「有真实评分」——为 0 / 缺省时不展示评分，避免出现写死的假分。
    */
-  downloads?: string
-  /**
-   * 应用大小
-   */
-  size?: string
+  ratingCount?: number
   /**
    * 年龄分级
    */
   age?: string
+  /**
+   * 应用截图 URL 列表（详情页预览区展示真实截图；缺省回退占位面板）
+   */
+  screenshots?: string[]
+  /**
+   * 开发者标识（对应 CloudBase apps 集合 `ownerLogin`，通常为 GitHub 登录名）。
+   * 用于「开发者主页」与「该开发者的其他 App」聚合。
+   */
+  developer?: string
+  /**
+   * 开发者展示名（中文名等）。缺省回退 GitHub 资料 name，再回退 developer 登录名。
+   */
+  developerName?: string
   /**
    * 副标题（用于今日推荐等）
    */
