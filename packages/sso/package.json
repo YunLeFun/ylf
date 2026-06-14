@@ -1,0 +1,45 @@
+{
+  "name": "@yunlefun/sso",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "云乐坊（Yunle.fun）跨站 SSO：一处登录、各站免登的客户端与协议层",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YunLeFun/ylf.git",
+    "directory": "packages/sso"
+  },
+  "keywords": [
+    "sso",
+    "single-sign-on",
+    "cloudbase",
+    "yunlefun"
+  ],
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "import": "./dist/protocol.mjs",
+      "require": "./dist/protocol.cjs"
+    }
+  },
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "unbuild",
+    "dev": "unbuild --stub",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "unbuild": "^2.0.0"
+  }
+}

@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@10.13.1",
   "scripts": {
-    "build": "pnpm --filter cilicili --filter @yunlefun/types --filter @yunlefun/deploy build",
+    "build": "pnpm --filter cilicili --filter @yunlefun/types --filter @yunlefun/deploy --filter @yunlefun/sso build",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest"
