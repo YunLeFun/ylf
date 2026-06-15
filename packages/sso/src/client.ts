@@ -4,7 +4,9 @@
  * 让任意前端「用云乐坊账号一处登录、各站免登」：打开主站桥接页、安全校验回传消息、
  * 把 CloudBase session 注入子应用自己的 SDK。详见 https://docs.yunle.fun 的 SSO 接入指南。
  */
+import type { NativeSsoOptions } from './native'
 import type { SsoMode, SsoResult, SsoSession } from './protocol'
+import { isInYunleApp, requestSsoNative } from './native'
 import { buildSsoRequestUrl, parseSsoResultMessage } from './protocol'
 
 /** 主站默认源 */
@@ -17,6 +19,8 @@ export interface SsoOptions {
   mode?: SsoMode
   /** 超时毫秒数。默认 silent 8000、interactive 120000 */
   timeoutMs?: number
+  /** 云乐坊原生容器内的选项（仅 isInYunleApp() 为真时生效） */
+  native?: NativeSsoOptions
 }
 
 /** 只依赖 setSession 的最小结构类型，避免强依赖具体 SDK 版本 */
@@ -132,14 +136,18 @@ export async function adoptSession(
 }
 
 /**
- * 一站式：发起 SSO 并在成功后直接注入子应用登录态。
- * 是大多数子应用唯一需要调用的函数。
+ * 一站式：发起 SSO 并在成功后直接注入子应用登录态。是大多数子应用唯一需要调用的函数。
+ *
+ * 自动选路：在云乐坊原生容器内（{@link isInYunleApp}）走 `window.ylf` 桥取会话；
+ * 否则走 www.yunle.fun 的 postMessage 桥。两条路终点都是 `auth.setSession()`，调用方无需感知平台。
  */
 export async function signInWithSso(
   auth: SsoSetSessionAuth,
-  options?: SsoOptions,
+  options: SsoOptions = {},
 ): Promise<SsoResult> {
-  const result = await requestSso(options)
+  const result = isInYunleApp()
+    ? await requestSsoNative(options.native)
+    : await requestSso(options)
   if (result.ok) {
     const adopted = await adoptSession(auth, result.session)
     if (!adopted)

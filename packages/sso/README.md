@@ -4,7 +4,7 @@
 
 主站 `www.yunle.fun` 登录一次，其他共享同一套 CloudBase Auth 的子应用（`*.yunle.fun` 等）即可静默复用登录态，`uid` 全平台一致。
 
-- **Consumer（子应用）** 用主入口 `@yunlefun/sso`：发起 SSO、注入登录态。
+- **Consumer（子应用）** 用主入口 `@yunlefun/sso`：一行 `signInWithSso` 在 web 与云乐坊原生 App 容器内都免登（自动选路）。
 - **Provider（主站桥接页）** 用 `@yunlefun/sso/protocol`：解析请求、校验请求方。
 - 两端共用同一份**协议常量与消息契约**，杜绝跨仓漂移。
 
@@ -39,6 +39,25 @@ if (!res.ok) {
 
 更细的控制：`requestSso()` 只取回 session，`adoptSession(auth, session)` 只注入。
 
+## 原生 App 容器内（自动）
+
+`signInWithSso()` 会**自动选路，调用方代码不变**：
+
+- 普通 web → www.yunle.fun 的 postMessage 桥（上方）。
+- 云乐坊原生容器内（apps.yunle.fun，注入 `window.ylf`）→ 走原生桥取**页面自己的**会话，宿主的 `refresh_token` 不下发给页面。
+
+两条路终点都是 `auth.setSession()`，所以同一行 `signInWithSso(auth)` 在 web 和 App 容器里都免登。原生容器需注入 `window.ylf`（二选一，`getCloudbaseSession` 更优、免 CORS）：
+
+```ts
+window.ylf = {
+  inYunleApp: true,
+  // 推荐：原生内部完成「授权码→兑换」，直接返回会话
+  getCloudbaseSession: opts => Promise<{ access_token, refresh_token } | null>,
+  // 兜底：返回一次性授权码，页面向 exchangeUrl 兑换
+  getAuthCode: opts => Promise<{ code }>,
+}
+```
+
 ## 主站桥接页（Provider）
 
 `www.yunle.fun/auth/sso` 读本站 session，校验请求方后用 `postMessage` 回传：
@@ -55,11 +74,12 @@ import {
 
 ## API
 
-| 入口                     | 导出                                                                                  | 用途                      |
-| ------------------------ | ------------------------------------------------------------------------------------- | ------------------------- |
-| `@yunlefun/sso`          | `signInWithSso` / `requestSso` / `adoptSession`                                       | 子应用：发起 + 注入登录态 |
-| `@yunlefun/sso/protocol` | `SSO_RESULT_TYPE` / `SSO_QUERY_KEYS` / `parseSsoResultMessage` / `buildSsoRequestUrl` | 协议常量与消息校验        |
-| `@yunlefun/sso/protocol` | `readSsoMode` / `readSsoTargetOrigin` / `readSsoNonce` / `isAnonymousSession`         | 主站解析子站请求          |
+| 入口                     | 导出                                                                                  | 用途                                |
+| ------------------------ | ------------------------------------------------------------------------------------- | ----------------------------------- |
+| `@yunlefun/sso`          | `signInWithSso` / `requestSso` / `adoptSession`                                       | 子应用：发起 + 注入登录态           |
+| `@yunlefun/sso`          | `isInYunleApp` / `requestSsoNative`                                                   | 原生容器内自适配（`window.ylf` 桥） |
+| `@yunlefun/sso/protocol` | `SSO_RESULT_TYPE` / `SSO_QUERY_KEYS` / `parseSsoResultMessage` / `buildSsoRequestUrl` | 协议常量与消息校验                  |
+| `@yunlefun/sso/protocol` | `readSsoMode` / `readSsoTargetOrigin` / `readSsoNonce` / `isAnonymousSession`         | 主站解析子站请求                    |
 
 ## 安全
 
