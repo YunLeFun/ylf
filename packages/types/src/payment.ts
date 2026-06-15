@@ -29,7 +29,7 @@ export const PLAN_FEATURES: Record<MembershipLevel, string[]> = {
 
 /** 会员套餐价格表（单位：分），与 functions/.../lib/plans.js 的 PLAN_PRICES 同步 */
 export const PLAN_PRICES: Record<MembershipLevel, Record<BillingCycle, number>> = {
-  basic: { month: 990, year: 9990 },
+  basic: { month: 1000, year: 10000 },
 }
 
 /** 云币汇率：1 云币 = 10 分（100 云币 = 10 元），与 lib/plans.js 的 COIN_RATE_FEN 同步 */
