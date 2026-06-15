@@ -60,8 +60,12 @@ async function exchangeAuthCode(code: string, exchangeUrl: string): Promise<SsoS
     })
     if (!res.ok)
       return null
-    const json = await res.json() as { data?: { session?: SsoSession } }
-    return json?.data?.session ?? null
+    const json = await res.json() as { data?: { session?: SsoSession, user?: unknown } }
+    const session = json?.data?.session
+    if (!session)
+      return null
+    // 兑换响应把 user 与 session 平级返回；透出到 session.user，与 web 桥对齐，便于消费方取用户信息
+    return { ...session, user: session.user ?? json.data?.user }
   }
   catch {
     return null

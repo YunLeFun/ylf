@@ -46,11 +46,15 @@ describe('requestSsoNative', () => {
     expect(await requestSsoNative()).toEqual({ ok: false, reason: 'not_authenticated' })
   })
 
-  it('falls back to getAuthCode + exchange', async () => {
+  it('falls back to getAuthCode + exchange, surfacing sibling user into session.user', async () => {
     setBridge({ inYunleApp: true, getAuthCode: async () => ({ code: 'C' }) })
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ data: { session } }) }))
+    const user = { id: 'u1', nickname: 'N', avatar: 'a.png' }
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ data: { session, user } }) }))
     g.fetch = fetchMock
-    expect(await requestSsoNative({ exchangeUrl: 'https://apps.example/exchange' })).toEqual({ ok: true, session })
+    expect(await requestSsoNative({ exchangeUrl: 'https://apps.example/exchange' })).toEqual({
+      ok: true,
+      session: { ...session, user },
+    })
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
