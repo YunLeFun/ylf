@@ -4,9 +4,10 @@
  * Provider（主站 www.yunle.fun 的 `/auth/sso` 桥接页）与 Consumer（各子应用）都从这里 import，
  * 作为「消息契约 + 请求解析」的单一事实源，避免两端各写一份导致协议漂移。
  *
- * - Provider 端用：`readSsoMode` / `readSsoTargetOrigin` / `readSsoNonce` / `isAnonymousSession`。
- * - Consumer 端用：`buildSsoRequestUrl` / `parseSsoResultMessage`。
- * - 两端共用：`SSO_RESULT_TYPE` / `SSO_QUERY_KEYS` 与各类型。
+ * - Provider 端用：`readSsoMode` / `readSsoTargetOrigin` / `readSsoNonce` / `readSsoReturnUrl`
+ *   / `isAnonymousSession` / `encodeSsoRedirectResult`。
+ * - Consumer 端用：`buildSsoRequestUrl` / `parseSsoResultMessage` / `parseSsoRedirectResult`。
+ * - 两端共用：`SSO_RESULT_TYPE` / `SSO_QUERY_KEYS` / `SSO_REDIRECT_HASH_KEY` 与各类型。
  */
 
 /** 回传消息的 type 字段 */
@@ -17,9 +18,11 @@ export const SSO_QUERY_KEYS = {
   mode: 'mode',
   targetOrigin: 'targetOrigin',
   nonce: 'nonce',
+  /** redirect 模式：登录完成后回跳的子站地址 */
+  returnUrl: 'returnUrl',
 } as const
 
-export type SsoMode = 'silent' | 'interactive'
+export type SsoMode = 'silent' | 'interactive' | 'redirect'
 
 export type SsoFailureReason
   = | 'not_authenticated'
@@ -28,6 +31,7 @@ export type SsoFailureReason
     | 'popup_blocked'
     | 'closed'
     | 'error'
+    | 'not_configured'
 
 /** CloudBase session（与 `@cloudbase/js-sdk` getSession() 返回一致） */
 export interface SsoSession {
@@ -47,11 +51,18 @@ export interface SsoResultMessage {
   reason?: 'invalid_request' | 'not_authenticated'
   /** ok === true 时携带的 CloudBase session */
   session?: unknown
+  /**
+   * ok === true 时可附带的一次性自定义登录票据（CloudBase `createTicket`）。
+   * 消费端优先用它 `signInWithCustomTicket` 换取**子站自己的独立会话**（独立
+   * refresh_token、同源可续期、免疫第三方存储分区），而非复用主站会话。
+   * 缺失时回退到 `session`，因此这是一个纯增量、向后兼容的字段。
+   */
+  ticket?: string
 }
 
 /** Consumer 归一化后的结果 */
 export type SsoResult
-  = | { ok: true, session: SsoSession }
+  = | { ok: true, session: SsoSession, ticket?: string }
     | { ok: false, reason: SsoFailureReason }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -66,7 +77,12 @@ export function firstQueryValue(value: unknown): string {
 // ──────────────────────────── Provider 端：解析子站请求 ────────────────────────────
 
 export function readSsoMode(raw: unknown): SsoMode {
-  return firstQueryValue(raw) === 'interactive' ? 'interactive' : 'silent'
+  const value = firstQueryValue(raw)
+  if (value === 'interactive')
+    return 'interactive'
+  if (value === 'redirect')
+    return 'redirect'
+  return 'silent'
 }
 
 /** 解析并归一化 targetOrigin；非法或缺失时返回空串（视为非法请求） */
@@ -87,6 +103,23 @@ export function readSsoNonce(raw: unknown): string {
 }
 
 /**
+ * 解析 redirect 模式的回跳地址。仅接受 http(s) 绝对 URL；非法/缺失返回空串。
+ * 安全：调用方仍须校验其 origin 在白名单内，再用于跳转（防开放重定向）。
+ */
+export function readSsoReturnUrl(raw: unknown): string {
+  const value = firstQueryValue(raw).trim()
+  if (!value)
+    return ''
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : ''
+  }
+  catch {
+    return ''
+  }
+}
+
+/**
  * 匿名 session（`user.is_anonymous === true`）一律按「未登录」处理：
  * 不能把匿名态当成已登录广播给子站。
  */
@@ -98,12 +131,13 @@ export function isAnonymousSession(session: unknown): boolean {
 
 // ──────────────────────────── Consumer 端：构造请求 & 校验回传 ────────────────────────────
 
-/** 构造打开桥接页的 URL（query 自动编码） */
+/** 构造打开桥接页的 URL（query 自动编码）。redirect 模式额外带上 `returnUrl`。 */
 export function buildSsoRequestUrl(input: {
   ssoOrigin: string
   mode: SsoMode
   targetOrigin: string
   nonce: string
+  returnUrl?: string
 }): string {
   const origin = input.ssoOrigin.replace(/\/+$/, '')
   const params = new URLSearchParams({
@@ -111,6 +145,8 @@ export function buildSsoRequestUrl(input: {
     [SSO_QUERY_KEYS.targetOrigin]: input.targetOrigin,
     [SSO_QUERY_KEYS.nonce]: input.nonce,
   })
+  if (input.returnUrl)
+    params.set(SSO_QUERY_KEYS.returnUrl, input.returnUrl)
   return `${origin}/auth/sso?${params.toString()}`
 }
 
@@ -140,11 +176,120 @@ export function parseSsoResultMessage(input: {
   if (typeof data.nonce !== 'string' || data.nonce !== expectedNonce)
     return null
 
-  if (data.ok === true && isRecord(data.session))
-    return { ok: true, session: data.session as SsoSession }
+  if (data.ok === true && isRecord(data.session)) {
+    const ticket = typeof data.ticket === 'string' && data.ticket ? data.ticket : undefined
+    return ticket
+      ? { ok: true, session: data.session as SsoSession, ticket }
+      : { ok: true, session: data.session as SsoSession }
+  }
 
   const reason: SsoFailureReason = data.reason === 'invalid_request'
     ? 'invalid_request'
     : 'not_authenticated'
   return { ok: false, reason }
+}
+
+// ──────────────────────────── 重定向握手（redirect 模式，抗存储分区的业界标准方案）────────────────────────────
+//
+// 顶层重定向每一跳都在各自源的第一方上下文里，因此免疫第三方 Cookie / 存储分区（Safari ITP 等）
+// —— 这正是隐藏 iframe 静默 SSO 在现代浏览器里失效的根因。结果经**回跳 URL 的 fragment**
+// （`#ylf_sso=<base64url(json)>`）回传：fragment 不发往服务器、不进 Referer。出于安全，redirect
+// 链路**只回传一次性 `ticket`**（绝不回传 refresh_token —— 那是已被废弃的 OAuth implicit flow 反模式）。
+
+/** 回跳 URL fragment 中承载结果的键名 */
+export const SSO_REDIRECT_HASH_KEY = 'ylf_sso'
+
+/** redirect 链路的归一化结果（仅一次性票据，无 session） */
+export type SsoRedirectResult
+  = | { ok: true, ticket: string }
+    | { ok: false, reason: SsoFailureReason }
+
+interface SsoRedirectPayload {
+  nonce: string
+  ok: boolean
+  ticket?: string
+  reason?: SsoFailureReason
+}
+
+const SSO_FAILURE_REASONS: readonly SsoFailureReason[] = [
+  'not_authenticated',
+  'invalid_request',
+  'timeout',
+  'popup_blocked',
+  'closed',
+  'error',
+  'not_configured',
+]
+
+function isSsoFailureReason(value: unknown): value is SsoFailureReason {
+  return typeof value === 'string' && (SSO_FAILURE_REASONS as readonly string[]).includes(value)
+}
+
+function encodeBase64Url(input: string): string {
+  return btoa(input).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function decodeBase64Url(input: string): string {
+  const pad = input.length % 4 === 0 ? '' : '='.repeat(4 - (input.length % 4))
+  return atob(input.replace(/-/g, '+').replace(/_/g, '/') + pad)
+}
+
+function readHashParam(hash: string, key: string): string {
+  const body = hash.startsWith('#') ? hash.slice(1) : hash
+  for (const part of body.split('&')) {
+    const eq = part.indexOf('=')
+    if (eq === -1)
+      continue
+    if (decodeURIComponent(part.slice(0, eq)) === key)
+      return decodeURIComponent(part.slice(eq + 1))
+  }
+  return ''
+}
+
+/**
+ * Provider 端：把 redirect 结果编码为回跳 URL fragment 的值。
+ * 调用方拼成 `<returnUrl>#${SSO_REDIRECT_HASH_KEY}=<本函数返回值>`。
+ */
+export function encodeSsoRedirectResult(payload: {
+  nonce: string
+  ok: boolean
+  ticket?: string
+  reason?: SsoFailureReason
+}): string {
+  const compact: SsoRedirectPayload = { nonce: payload.nonce, ok: payload.ok }
+  if (payload.ticket)
+    compact.ticket = payload.ticket
+  if (payload.reason)
+    compact.reason = payload.reason
+  return encodeBase64Url(JSON.stringify(compact))
+}
+
+/**
+ * Consumer 端：从回跳 URL 的 hash 中解析 redirect 结果。
+ *
+ * - `null`          —— hash 里没有本协议结果（或 nonce 不匹配 / 解码失败），调用方忽略即可。
+ * - `{ ok: true }`  —— 成功，带一次性 ticket。
+ * - `{ ok: false }` —— 是本次结果但失败（未登录 / 非法 / 未配置票据等）。
+ *
+ * 安全关键：nonce 必须等于本次发起重定向时存下的值（防 CSRF / 结果注入）。
+ */
+export function parseSsoRedirectResult(input: { hash: string, expectedNonce: string }): SsoRedirectResult | null {
+  const raw = readHashParam(input.hash, SSO_REDIRECT_HASH_KEY)
+  if (!raw || !input.expectedNonce)
+    return null
+
+  let payload: Record<string, unknown> | null = null
+  try {
+    const parsed = JSON.parse(decodeBase64Url(raw))
+    payload = isRecord(parsed) ? parsed : null
+  }
+  catch {
+    return null
+  }
+  if (!payload || payload.nonce !== input.expectedNonce)
+    return null
+
+  if (payload.ok === true && typeof payload.ticket === 'string' && payload.ticket)
+    return { ok: true, ticket: payload.ticket }
+  return { ok: false, reason: isSsoFailureReason(payload.reason) ? payload.reason : 'not_authenticated' }
 }

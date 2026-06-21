@@ -1,7 +1,7 @@
 {
   "name": "@yunlefun/sso",
   "type": "module",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "云乐坊（Yunle.fun）跨站 SSO：一处登录、各站免登的客户端与协议层",
   "license": "MIT",
   "repository": {

@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildSsoRequestUrl,
+  encodeSsoRedirectResult,
   firstQueryValue,
   isAnonymousSession,
+  parseSsoRedirectResult,
   parseSsoResultMessage,
   readSsoMode,
   readSsoNonce,
+  readSsoReturnUrl,
   readSsoTargetOrigin,
+  SSO_REDIRECT_HASH_KEY,
   SSO_RESULT_TYPE,
 } from '../src/protocol'
 
@@ -107,5 +111,95 @@ describe('parseSsoResultMessage', () => {
       eventOrigin: ORIGIN,
       data: msg({ ok: true }),
     })).toEqual({ ok: false, reason: 'not_authenticated' })
+  })
+
+  it('passes a custom-login ticket through alongside the session', () => {
+    const session = { access_token: 'at', refresh_token: 'rt' }
+    expect(parseSsoResultMessage({
+      expectedOrigin: ORIGIN,
+      expectedNonce: NONCE,
+      eventOrigin: ORIGIN,
+      data: msg({ ok: true, session, ticket: 'tkt-123' }),
+    })).toEqual({ ok: true, session, ticket: 'tkt-123' })
+  })
+
+  it('omits a missing / empty / non-string ticket (stays backward compatible)', () => {
+    const session = { access_token: 'at', refresh_token: 'rt' }
+    for (const ticket of [undefined, '', 0, false, {}]) {
+      expect(parseSsoResultMessage({
+        expectedOrigin: ORIGIN,
+        expectedNonce: NONCE,
+        eventOrigin: ORIGIN,
+        data: msg({ ok: true, session, ticket }),
+      })).toEqual({ ok: true, session })
+    }
+  })
+})
+
+describe('readSsoMode (redirect)', () => {
+  it('returns redirect only for the exact value', () => {
+    expect(readSsoMode('redirect')).toBe('redirect')
+    expect(readSsoMode(['redirect'])).toBe('redirect')
+    expect(readSsoMode('Redirect')).toBe('silent')
+    expect(readSsoMode('interactive')).toBe('interactive')
+  })
+})
+
+describe('readSsoReturnUrl', () => {
+  it('accepts http(s) absolute URLs, rejects junk and non-http schemes', () => {
+    expect(readSsoReturnUrl('https://wenta.example/path?x=1')).toBe('https://wenta.example/path?x=1')
+    expect(readSsoReturnUrl('http://localhost:5173/')).toBe('http://localhost:5173/')
+    expect(readSsoReturnUrl('javascript:alert(1)')).toBe('')
+    expect(readSsoReturnUrl('not-a-url')).toBe('')
+    expect(readSsoReturnUrl(undefined)).toBe('')
+  })
+})
+
+describe('buildSsoRequestUrl (redirect)', () => {
+  it('includes returnUrl only when provided', () => {
+    const base = buildSsoRequestUrl({ ssoOrigin: ORIGIN, mode: 'interactive', targetOrigin: 'https://wenta.example', nonce: NONCE })
+    expect(base).not.toContain('returnUrl')
+
+    const url = new URL(buildSsoRequestUrl({
+      ssoOrigin: ORIGIN,
+      mode: 'redirect',
+      targetOrigin: 'https://wenta.example',
+      nonce: NONCE,
+      returnUrl: 'https://wenta.example/deck?x=1',
+    }))
+    expect(url.searchParams.get('mode')).toBe('redirect')
+    expect(url.searchParams.get('returnUrl')).toBe('https://wenta.example/deck?x=1')
+  })
+})
+
+describe('redirect result encode/parse', () => {
+  const hashFor = (value: string) => `#${SSO_REDIRECT_HASH_KEY}=${value}`
+
+  it('round-trips a success result carrying the one-time ticket', () => {
+    const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: true, ticket: 'tkt-xyz' })
+    expect(parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: NONCE })).toEqual({ ok: true, ticket: 'tkt-xyz' })
+  })
+
+  it('round-trips a failure result with its reason', () => {
+    const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: false, reason: 'not_configured' })
+    expect(parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: NONCE })).toEqual({ ok: false, reason: 'not_configured' })
+  })
+
+  it('rejects a nonce mismatch (CSRF / result-injection guard)', () => {
+    const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: true, ticket: 'tkt-xyz' })
+    expect(parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: 'other-nonce' })).toBeNull()
+  })
+
+  it('returns null with no result in the hash, or an empty expected nonce', () => {
+    const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: true, ticket: 'tkt-xyz' })
+    expect(parseSsoRedirectResult({ hash: '#room=abc', expectedNonce: NONCE })).toBeNull()
+    expect(parseSsoRedirectResult({ hash: '', expectedNonce: NONCE })).toBeNull()
+    expect(parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: '' })).toBeNull()
+  })
+
+  it('treats ok:true without a usable ticket as a failure, and ignores malformed payloads', () => {
+    const noTicket = encodeSsoRedirectResult({ nonce: NONCE, ok: true })
+    expect(parseSsoRedirectResult({ hash: hashFor(noTicket), expectedNonce: NONCE })).toEqual({ ok: false, reason: 'not_authenticated' })
+    expect(parseSsoRedirectResult({ hash: hashFor('!!!not-base64!!!'), expectedNonce: NONCE })).toBeNull()
   })
 })
