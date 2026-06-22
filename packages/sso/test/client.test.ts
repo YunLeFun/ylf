@@ -40,7 +40,11 @@ describe('adoptSsoResult', () => {
     const signInWithCustomTicket = vi.fn(async () => undefined)
     const ok = await adoptSsoResult({ setSession, signInWithCustomTicket }, { ok: true, session, ticket: 'tkt-1' })
     expect(ok).toBe(true)
-    expect(signInWithCustomTicket).toHaveBeenCalledWith('tkt-1')
+    // v2 API: called with a ticket-provider function, not the raw string.
+    expect(signInWithCustomTicket).toHaveBeenCalledTimes(1)
+    const getTicket = signInWithCustomTicket.mock.calls[0][0] as () => Promise<string>
+    expect(typeof getTicket).toBe('function')
+    expect(await getTicket()).toBe('tkt-1')
     expect(setSession).not.toHaveBeenCalled()
   })
 
@@ -72,7 +76,10 @@ describe('adoptSsoTicket', () => {
   it('signs in with the one-time ticket when supported', async () => {
     const signInWithCustomTicket = vi.fn(async () => undefined)
     expect(await adoptSsoTicket({ setSession: vi.fn(), signInWithCustomTicket }, 'tkt-1')).toBe(true)
-    expect(signInWithCustomTicket).toHaveBeenCalledWith('tkt-1')
+    // v2 API: called with a ticket-provider function, not the raw string.
+    const getTicket = signInWithCustomTicket.mock.calls[0][0] as () => Promise<string>
+    expect(typeof getTicket).toBe('function')
+    expect(await getTicket()).toBe('tkt-1')
   })
 
   it('returns false without a ticket or without ticket support', async () => {

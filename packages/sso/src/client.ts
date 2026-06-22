@@ -30,8 +30,11 @@ export interface SsoSetSessionAuth {
    * 可选：CloudBase `signInWithCustomTicket`。提供且桥接下发了一次性 `ticket` 时，
    * `signInWithSso` / `adoptSsoResult` 会优先用它换取**子站自己的独立会话**（独立
    * refresh_token、同源可续期），而非复用主站会话 `setSession`。
+   *
+   * 注意：CloudBase js-sdk **v2** 的签名是接收一个**返回票据的函数**（`getTickFn`），
+   * 不是票据字符串本身——传字符串会被当函数调用而同步抛错。
    */
-  signInWithCustomTicket?: (ticket: string) => Promise<unknown>
+  signInWithCustomTicket?: (getTicket: () => Promise<string>) => Promise<unknown>
 }
 
 function createNonce(): string {
@@ -154,7 +157,9 @@ export async function adoptSsoResult(
   result: Extract<SsoResult, { ok: true }>,
 ): Promise<boolean> {
   if (result.ticket && typeof auth.signInWithCustomTicket === 'function') {
-    await auth.signInWithCustomTicket(result.ticket)
+    // v2 API：传一个返回票据的函数，不是票据字符串。
+    const ticket = result.ticket
+    await auth.signInWithCustomTicket(() => Promise.resolve(ticket))
     return true
   }
   return adoptSession(auth, result.session)
@@ -230,7 +235,7 @@ export function startSsoRedirect(options: RedirectSsoOptions = {}): void {
 /**
  * 在应用启动时调用：若当前 URL 是一次 SSO 重定向回跳，解析并返回结果，同时**清理地址栏与暂存 nonce**
  * （避免一次性票据残留在历史/地址栏）。不是回跳（或 nonce 不匹配）则返回 null。
- * 成功后用 `auth.signInWithCustomTicket(result.ticket)`（或 {@link adoptSsoTicket}）采用登录态。
+ * 成功后用 {@link adoptSsoTicket}（或 `auth.signInWithCustomTicket(() => Promise.resolve(result.ticket))`）采用登录态。
  */
 export function consumeSsoRedirect(): SsoRedirectResult | null {
   if (typeof window === 'undefined')
@@ -263,7 +268,8 @@ export function consumeSsoRedirect(): SsoRedirectResult | null {
 export async function adoptSsoTicket(auth: SsoSetSessionAuth, ticket: string): Promise<boolean> {
   if (!ticket || typeof auth.signInWithCustomTicket !== 'function')
     return false
-  await auth.signInWithCustomTicket(ticket)
+  // v2 API：传一个返回票据的函数，不是票据字符串。
+  await auth.signInWithCustomTicket(() => Promise.resolve(ticket))
   return true
 }
 
