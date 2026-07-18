@@ -7,10 +7,13 @@
 import type { NativeSsoOptions } from './native'
 import type { SsoMode, SsoRedirectResult, SsoResult, SsoSession } from './protocol'
 import { isInYunleApp, requestSsoNative } from './native'
-import { buildSsoRequestUrl, parseSsoRedirectResult, parseSsoResultMessage, SSO_REDIRECT_HASH_KEY } from './protocol'
+import { buildSsoRequestUrl, parseSsoRedirectResult, parseSsoResultMessage, readSsoReturnUrl, SSO_REDIRECT_HASH_KEY } from './protocol'
 
 /** 主站默认源 */
 export const YLF_DEFAULT_SSO_ORIGIN = 'https://www.yunle.fun'
+
+/** Default HTTPS endpoint that atomically redeems a v2 SSO authorization code. */
+export const YLF_DEFAULT_SSO_EXCHANGE_URL = 'https://api.yunle.fun/sso-ticket'
 
 export interface SsoOptions {
   /** 主站源，默认 https://www.yunle.fun。本地联调可传 http://localhost:5173 等 */
@@ -19,13 +22,18 @@ export interface SsoOptions {
   mode?: SsoMode
   /** 超时毫秒数。默认 silent 8000、interactive 120000 */
   timeoutMs?: number
+  /** Explicit loopback-only HTTP exception for local development. */
+  allowHttpLocalhost?: boolean
+  /** One-time code exchange endpoint. Defaults to the YunLeFun production endpoint. */
+  exchangeUrl?: string
   /** 云乐坊原生容器内的选项（仅 isInYunleApp() 为真时生效） */
   native?: NativeSsoOptions
 }
 
-/** 只依赖 setSession 的最小结构类型，避免强依赖具体 SDK 版本 */
-export interface SsoSetSessionAuth {
-  setSession: (params: { access_token: string, refresh_token: string }) => Promise<unknown>
+/** Minimal CloudBase auth surface accepted by the SSO adoption helpers. */
+export interface SsoAdoptionAuth {
+  /** Legacy session adoption. New consumers must not provide main-site refresh tokens. */
+  setSession?: (params: { access_token: string, refresh_token: string }) => Promise<unknown>
   /**
    * 可选：CloudBase `signInWithCustomTicket`。提供且桥接下发了一次性 `ticket` 时，
    * `signInWithSso` / `adoptSsoResult` 会优先用它换取**子站自己的独立会话**（独立
@@ -35,6 +43,22 @@ export interface SsoSetSessionAuth {
    * 不是票据字符串本身——传字符串会被当函数调用而同步抛错。
    */
   signInWithCustomTicket?: (getTicket: () => Promise<string>) => Promise<unknown>
+}
+
+/** Legacy auth surface required only by {@link adoptSession}. */
+export interface SsoSetSessionAuth extends SsoAdoptionAuth {
+  setSession: (params: { access_token: string, refresh_token: string }) => Promise<unknown>
+}
+
+/** Fetch-compatible function seam used by code exchange and deterministic tests. */
+export type SsoFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
+/** Options for exchanging a bound one-time SSO authorization code. */
+export interface SsoCodeExchangeOptions {
+  nonce: string
+  exchangeUrl?: string
+  allowHttpLocalhost?: boolean
+  fetch?: SsoFetch
 }
 
 function createNonce(): string {
@@ -55,7 +79,13 @@ export function requestSso(options: SsoOptions = {}): Promise<SsoResult> {
   const mode = options.mode ?? 'silent'
   const timeoutMs = options.timeoutMs ?? (mode === 'interactive' ? 120_000 : 8000)
   const nonce = createNonce()
-  const url = buildSsoRequestUrl({ ssoOrigin, mode, targetOrigin: window.location.origin, nonce })
+  const url = buildSsoRequestUrl({
+    ssoOrigin,
+    mode,
+    targetOrigin: window.location.origin,
+    nonce,
+    allowHttpLocalhost: options.allowHttpLocalhost,
+  })
 
   return new Promise<SsoResult>((resolve) => {
     let settled = false
@@ -153,16 +183,74 @@ export async function adoptSession(
  * @returns 是否成功注入
  */
 export async function adoptSsoResult(
-  auth: SsoSetSessionAuth,
+  auth: SsoAdoptionAuth,
   result: Extract<SsoResult, { ok: true }>,
+  options: Omit<SsoCodeExchangeOptions, 'nonce'> = {},
 ): Promise<boolean> {
+  if ('code' in result) {
+    return adoptSsoCode(auth, result.code, {
+      ...options,
+      nonce: result.nonce,
+    })
+  }
   if (result.ticket && typeof auth.signInWithCustomTicket === 'function') {
     // v2 API：传一个返回票据的函数，不是票据字符串。
     const ticket = result.ticket
     await auth.signInWithCustomTicket(() => Promise.resolve(ticket))
     return true
   }
-  return adoptSession(auth, result.session)
+  return typeof auth.setSession === 'function'
+    ? adoptSession(auth as SsoSetSessionAuth, result.session)
+    : false
+}
+
+/**
+ * Atomically redeem a v2 authorization code, then hand the transient CloudBase ticket directly
+ * to the official SDK. The exchange response is rejected if it contains session tokens.
+ */
+export async function adoptSsoCode(
+  auth: SsoAdoptionAuth,
+  code: string,
+  options: SsoCodeExchangeOptions,
+): Promise<boolean> {
+  if (!/^[\w-]{43}$/.test(code) || !/^[\w-]{32,128}$/.test(options.nonce))
+    return false
+  if (typeof auth.signInWithCustomTicket !== 'function')
+    return false
+  const exchangeUrl = readSsoReturnUrl(
+    options.exchangeUrl ?? YLF_DEFAULT_SSO_EXCHANGE_URL,
+    { allowHttpLocalhost: options.allowHttpLocalhost },
+  )
+  if (!exchangeUrl)
+    throw new TypeError('SSO exchange URL must use HTTPS')
+  const fetchImpl = options.fetch ?? globalThis.fetch
+  if (typeof fetchImpl !== 'function')
+    throw new TypeError('fetch is unavailable')
+  await auth.signInWithCustomTicket(async () => {
+    const response = await fetchImpl(exchangeUrl, {
+      method: 'POST',
+      credentials: 'omit',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'exchangeSsoCode', code, nonce: options.nonce }),
+    })
+    const payload = await response.json() as unknown
+    if (!response.ok || !isTicketExchangeResponse(payload))
+      throw new Error('SSO authorization code exchange failed')
+    return payload.ticket
+  })
+  return true
+}
+
+function isTicketExchangeResponse(value: unknown): value is { ok: true, ticket: string } {
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    return false
+  const record = value as Record<string, unknown>
+  return record.ok === true
+    && typeof record.ticket === 'string'
+    && record.ticket.length > 0
+    && !('access_token' in record)
+    && !('refresh_token' in record)
+    && !('session' in record)
 }
 
 /**
@@ -173,14 +261,17 @@ export async function adoptSsoResult(
  * 否则回退到 `setSession`，调用方无需感知平台或凭证形态。
  */
 export async function signInWithSso(
-  auth: SsoSetSessionAuth,
+  auth: SsoAdoptionAuth,
   options: SsoOptions = {},
 ): Promise<SsoResult> {
   const result = isInYunleApp()
     ? await requestSsoNative(options.native)
     : await requestSso(options)
   if (result.ok) {
-    const adopted = await adoptSsoResult(auth, result)
+    const adopted = await adoptSsoResult(auth, result, {
+      exchangeUrl: options.exchangeUrl,
+      allowHttpLocalhost: options.allowHttpLocalhost,
+    })
     if (!adopted)
       return { ok: false, reason: 'not_authenticated' }
   }
@@ -199,6 +290,8 @@ export interface RedirectSsoOptions {
    * 其 origin 必须在主站 SSO 白名单内，否则桥接页会拒绝跳转。
    */
   returnUrl?: string
+  /** Explicit loopback-only HTTP exception for local development. */
+  allowHttpLocalhost?: boolean
 }
 
 /**
@@ -229,13 +322,14 @@ export function startSsoRedirect(options: RedirectSsoOptions = {}): void {
     targetOrigin: origin,
     nonce,
     returnUrl,
+    allowHttpLocalhost: options.allowHttpLocalhost,
   }))
 }
 
 /**
  * 在应用启动时调用：若当前 URL 是一次 SSO 重定向回跳，解析并返回结果，同时**清理地址栏与暂存 nonce**
  * （避免一次性票据残留在历史/地址栏）。不是回跳（或 nonce 不匹配）则返回 null。
- * 成功后用 {@link adoptSsoTicket}（或 `auth.signInWithCustomTicket(() => Promise.resolve(result.ticket))`）采用登录态。
+ * 成功后用 {@link adoptSsoCode} 原子兑换授权码并采用登录态。
  */
 export function consumeSsoRedirect(): SsoRedirectResult | null {
   if (typeof window === 'undefined')
@@ -265,6 +359,7 @@ export function consumeSsoRedirect(): SsoRedirectResult | null {
 }
 
 /** 采用 redirect 链路拿到的一次性 ticket：换取子站自己的独立会话。 */
+/** @deprecated New consumers must use {@link adoptSsoCode}; retained for legacy providers only. */
 export async function adoptSsoTicket(auth: SsoSetSessionAuth, ticket: string): Promise<boolean> {
   if (!ticket || typeof auth.signInWithCustomTicket !== 'function')
     return false

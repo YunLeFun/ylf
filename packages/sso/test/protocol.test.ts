@@ -4,6 +4,7 @@ import {
   encodeSsoRedirectResult,
   firstQueryValue,
   isAnonymousSession,
+  isSsoRedirectBoundToTarget,
   parseSsoRedirectResult,
   parseSsoResultMessage,
   readSsoMode,
@@ -36,13 +37,16 @@ describe('provider-side request parsing', () => {
 
   it('readSsoTargetOrigin normalizes origin and rejects junk', () => {
     expect(readSsoTargetOrigin('https://apps.yunle.fun/x?y=1')).toBe('https://apps.yunle.fun')
-    expect(readSsoTargetOrigin('http://localhost:2333')).toBe('http://localhost:2333')
+    expect(readSsoTargetOrigin('http://localhost:2333')).toBe('')
+    expect(readSsoTargetOrigin('http://localhost:2333', { allowHttpLocalhost: true })).toBe('http://localhost:2333')
+    expect(readSsoTargetOrigin('http://drive.yunle.fun')).toBe('')
     expect(readSsoTargetOrigin('not-a-url')).toBe('')
     expect(readSsoTargetOrigin(undefined)).toBe('')
   })
 
   it('readSsoNonce trims', () => {
-    expect(readSsoNonce('  abc  ')).toBe('abc')
+    expect(readSsoNonce(`  ${NONCE}  `)).toBe(NONCE)
+    expect(readSsoNonce('too-short')).toBe('')
     expect(readSsoNonce(undefined)).toBe('')
   })
 
@@ -148,10 +152,16 @@ describe('readSsoMode (redirect)', () => {
 describe('readSsoReturnUrl', () => {
   it('accepts http(s) absolute URLs, rejects junk and non-http schemes', () => {
     expect(readSsoReturnUrl('https://wenta.example/path?x=1')).toBe('https://wenta.example/path?x=1')
-    expect(readSsoReturnUrl('http://localhost:5173/')).toBe('http://localhost:5173/')
+    expect(readSsoReturnUrl('http://localhost:5173/')).toBe('')
+    expect(readSsoReturnUrl('http://localhost:5173/', { allowHttpLocalhost: true })).toBe('http://localhost:5173/')
     expect(readSsoReturnUrl('javascript:alert(1)')).toBe('')
     expect(readSsoReturnUrl('not-a-url')).toBe('')
     expect(readSsoReturnUrl(undefined)).toBe('')
+  })
+
+  it('binds the redirect return URL to the declared target origin', () => {
+    expect(isSsoRedirectBoundToTarget('https://wenta.example', 'https://wenta.example/deck')).toBe(true)
+    expect(isSsoRedirectBoundToTarget('https://wenta.example', 'https://evil.example/deck')).toBe(false)
   })
 })
 
@@ -178,6 +188,14 @@ describe('redirect result encode/parse', () => {
   it('round-trips a success result carrying the one-time ticket', () => {
     const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: true, ticket: 'tkt-xyz' })
     expect(parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: NONCE })).toEqual({ ok: true, ticket: 'tkt-xyz' })
+  })
+
+  it('prefers a bound v2 authorization code and never carries a refresh token', () => {
+    const code = 'c'.repeat(43)
+    const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: true, code })
+    const decoded = parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: NONCE })
+    expect(decoded).toEqual({ ok: true, code, nonce: NONCE })
+    expect(JSON.stringify(decoded)).not.toContain('refresh_token')
   })
 
   it('round-trips a failure result with its reason', () => {

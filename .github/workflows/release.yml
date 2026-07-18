@@ -25,14 +25,19 @@ on:
           - cilicili
           - ylf
           - types
+          - server-session
+          - server-session-cloudbase
+          - sso
 
 permissions:
-  contents: write # changelogithub 创建 GitHub Release 需要
-  id-token: write # npm provenance 需要
+  contents: read
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm Trusted Publishing 用 OIDC 换取短期发布凭证
     steps:
       # changelogithub 需要完整历史与全部 tag 才能计算两 tag 间的提交
       - uses: actions/checkout@v6
@@ -43,16 +48,25 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
           cache: pnpm
 
-      # Trusted Publishing (OIDC) 需要 npm >= 11.5.1
-      - name: Upgrade npm
-        run: npm install -g npm@latest
+      # Trusted Publishing (OIDC) 需要 npm >= 11.5.1；固定版本避免 latest 漂移。
+      - name: Install trusted-publishing npm
+        run: npm install -g npm@11.16.0
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      # Trusted Publisher 信任仓库和工作流文件，但不锁定分支；只允许 main 历史上的提交发布。
+      - name: Require release commit on main
+        run: |
+          git fetch origin main --no-tags
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::只允许发布 main 历史上的提交"
+            exit 1
+          fi
 
       # 确定要发布的包目录：手动触发用输入；tag 触发从 <name>@<version> 反查
       - name: Resolve package dir
@@ -65,9 +79,15 @@ jobs:
             dir=$(node -e "const fs=require('fs');for(const d of fs.readdirSync('packages')){try{if(require('./packages/'+d+'/package.json').name===process.argv[1]){console.log('packages/'+d);process.exit(0)}}catch{}}process.exit(1)" "$name")
           fi
           [ -n "$dir" ] && [ -f "$dir/package.json" ] || { echo "::error::无法定位包目录"; exit 1; }
+          package_name=$(node -p "require('./$dir/package.json').name")
+          version=$(node -p "require('./$dir/package.json').version")
+          if [ "${{ github.event_name }}" = "push" ] && [ "$GITHUB_REF_NAME" != "$package_name@$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME 与 package.json 的 $package_name@$version 不一致"
+            exit 1
+          fi
           echo "dir=$dir" >> "$GITHUB_OUTPUT"
-          echo "name=$(node -p "require('./$dir/package.json').name")" >> "$GITHUB_OUTPUT"
-          echo "version=$(node -p "require('./$dir/package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "name=$package_name" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # 若该版本已发布则跳过，保证可重复运行
       - name: Skip if already published
@@ -100,22 +120,40 @@ jobs:
       - name: Pack
         if: steps.check.outputs.skip == 'false'
         working-directory: ${{ steps.pkg.outputs.dir }}
-        run: pnpm pack
+        run: pnpm pack --out "$RUNNER_TEMP/package.tgz"
 
       # OIDC trusted publishing：无需 token，npm 自动用 id-token 换取发布凭证
       - name: Publish
         if: steps.check.outputs.skip == 'false'
-        working-directory: ${{ steps.pkg.outputs.dir }}
-        run: npm publish "$(ls *.tgz)" --access public
+        run: npm publish "$RUNNER_TEMP/package.tgz" --access public
 
       - name: Summary
         if: steps.check.outputs.skip == 'false'
         run: echo "✅ 已发布 ${{ steps.pkg.outputs.name }}@${{ steps.pkg.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
 
-      # 仅 tag 触发：按 conventional commits 自动创建/更新该 tag 的 GitHub Release
-      # （仓库级：纳入与上一个 tag 之间的全部提交）。手动触发无 tag，故跳过。
+  # GitHub Release 写权限与 npm OIDC 发布权限隔离，避免发布任务拥有不必要的仓库写权限。
+  release:
+    if: github.event_name == 'push'
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
       - name: Create GitHub Release (changelog)
-        if: github.event_name == 'push'
         run: pnpm exec changelogithub
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

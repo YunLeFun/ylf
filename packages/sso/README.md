@@ -1,165 +1,85 @@
 # @yunlefun/sso
 
-云乐坊（Yunle.fun）跨站 SSO：**一处登录、各站免登**，全平台 `uid` 一致。
+云乐坊第一方应用的跨站身份联邦。主站确认用户身份，子应用建立自己的 CloudBase 临时会话；应用自己的长期登录态由 `@yunlefun/server-session` 管理。
 
-主站 `www.yunle.fun` 登录一次，其他共享同一套 CloudBase Auth 的子应用（`*.yunle.fun`、EdgeOne 独立域等）即可免登。
+> 仅用于受控的第一方 origin。面向第三方产品应使用标准 OAuth/OIDC 授权码流程。
 
-> 机制原理与排错见 [跨站 SSO 接入指南](https://docs.yunle.fun/account/sso)。
+## 职责边界
 
-> ⚠️ **受信任站点专用，非开放第三方登录。** 子站 origin 必须由云乐坊管理员加入白名单。只用于你自己掌控/完全信任的站点；面向任意第三方的「用云乐坊登录」需标准 OAuth 授权码流程，不在本包范围。
+| 组件                       | 负责                                                                                 | 不负责                                     |
+| -------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------ |
+| `@yunlefun/sso`            | 顶层重定向、origin/return URL/nonce 绑定、一次性授权码、CloudBase custom ticket 采用 | Drive/CMS cookie、设备列表、撤销、应用授权 |
+| `www.yunle.fun`            | 从当前已认证调用上下文派生 uid，签发并原子消费一次性授权码                           | 接受调用者传入 uid；向子站发送主站 session |
+| CloudBase Auth             | 官方 `signInWithCustomTicket` 身份证明                                               | Drive/CMS 的长期应用会话                   |
+| `@yunlefun/server-session` | 256-bit opaque cookie、哈希持久化、过期、轮换、撤销、CSRF                            | 跨站身份联邦                               |
 
----
+SSO 与 server-session 因此不会重复：前者回答“这是谁”，后者回答“这个应用是否仍允许这台设备保持登录”。
 
-## 两种采用方式 —— 优先用「票据 → 独立会话」
+## v2 安全流程
 
-子站拿到登录态有两条路，**新接入一律走前者**：
+1. Consumer 顶层跳转到 `https://www.yunle.fun/auth/sso`，携带 HTTPS `targetOrigin`、同 origin `returnUrl` 和 128-bit nonce。
+2. Provider 使用 `auth.getSession()`，检查 `{ data, error }`，要求 `data.session` 且拒绝 `user.is_anonymous`。
+3. 已认证 Provider 调用 `sso-ticket` 的 `issueSsoCode`；云函数从当前调用上下文派生 uid，拒绝任何 `uid`/`subject` 输入。
+4. Provider 在回跳 fragment 中只放 256-bit 一次性授权码和 nonce，不放 CloudBase ticket、access token 或 refresh token。
+5. Consumer 从自身 origin 以 HTTPS 原子兑换授权码。服务端校验 Origin + nonce + TTL，并在事务中将授权码标为已使用。
+6. 兑换响应只返回短暂 CloudBase custom ticket；Consumer 立即交给官方 `signInWithCustomTicket(getTicket)`。
+7. Consumer 用 `auth.getSession()` 验证真实非匿名 session，将 access token 作为一次性证明交给应用 BFF 换取 host-only opaque session，然后清除临时 CloudBase 会话。
 
-|            | **ticket → 独立会话（推荐）**                         | session 转发（旧／兜底）                                    |
-| ---------- | ----------------------------------------------------- | ----------------------------------------------------------- |
-| 子站会话   | 自己**独立**的 CloudBase 会话（独立 `refresh_token`） | 复用主站会话（共享 `refresh_token`）                        |
-| 续期       | **同源直连续期**，无需再跨站                          | 共享单次 `refresh_token`，轮换互相作废 → 过期只能反复跨站取 |
-| 抗存储分区 | ✅（握手走顶层重定向，每跳第一方）                    | ❌（隐藏 iframe 在 Safari ITP 等下失效）                    |
-| 安全       | 主站 `refresh_token` **不下发**                       | 主站 `refresh_token` 下发给子站                             |
-| 采用       | `signInWithCustomTicket`                              | `setSession`（或自有 `setCredentials`）                     |
+授权码只保存 SHA-256 标识，默认 60 秒失效，并且只能成功消费一次。CloudBase custom-login 私钥仅存在于受管函数 secret/env 中。
 
-> 为什么共享 session 会坏：CloudBase 的 `refresh_token` 单次轮换，两个源共用一份会互相作废，子站会话死掉且无法续期——这是「显示登录但实际没登录」类问题的根因。ticket 让子站做**自己的一次登录**，从此各自续期、互不干扰。
-
-握手优先级（最佳实践）：**顶层重定向 > 弹窗 > 隐藏 iframe**。重定向每一跳都在各自源的第一方上下文，是唯一能在第三方存储被分区的浏览器里完成首次握手的方式。
-
-## 安装
+## Consumer 接入
 
 ```bash
 pnpm add @yunlefun/sso
 ```
 
----
-
-## 子应用（Consumer）
-
-### 1. 登录 = 顶层重定向（推荐）
+登录按钮发起顶层重定向：
 
 ```ts
 import { startSsoRedirect } from '@yunlefun/sso'
 
-// 「用云乐坊账号登录」按钮：
-function onLogin() {
-  startSsoRedirect() // 整页跳到主站桥接页，登录后带一次性票据跳回；本函数不会 resolve
-}
+startSsoRedirect()
 ```
 
-### 2. 应用启动时消费回跳 + 采用票据
+应用启动时消费结果并兑换：
 
 ```ts
 import cloudbase from '@cloudbase/js-sdk'
-import { adoptSsoTicket, consumeSsoRedirect } from '@yunlefun/sso'
+import { adoptSsoCode, consumeSsoRedirect } from '@yunlefun/sso'
 
-const auth = cloudbase.init({ env: 'yunlefun-8g7ybcxc7345c490' }).auth({ persistence: 'local' })
+const app = cloudbase.init({
+  env: 'yunlefun-8g7ybcxc7345c490',
+  region: 'ap-shanghai',
+  accessKey: '<publishable-key>',
+  auth: { detectSessionInUrl: true },
+})
+const auth = app.auth
 
-// 启动时：若本次加载是一次 SSO 重定向回跳，兑换票据为「子站自己的独立会话」。
-// consumeSsoRedirect 会校验 nonce、清理地址栏与暂存 nonce（票据不残留在历史）。
 const redirect = consumeSsoRedirect()
-if (redirect?.ok) {
-  await adoptSsoTicket(auth, redirect.ticket) // → signInWithCustomTicket，建立独立会话
+if (redirect?.ok && 'code' in redirect) {
+  await adoptSsoCode(auth, redirect.code, { nonce: redirect.nonce })
 }
-// 之后照常 auth.getSession() 读自己的会话；同源续期，不再跨站。
+
+const { data, error } = await auth.getSession()
+if (error || !data?.session || data.session.user?.is_anonymous) {
+  throw new Error('SSO did not establish a verified session')
+}
 ```
 
-### 3. 一站式（自动选路，含原生容器 + 票据优先）
+本地联调必须显式传 `allowHttpLocalhost: true`，且只放行 loopback；生产 API 默认拒绝所有 HTTP URL。
 
-`signInWithSso` 仍可用：自动选路（web postMessage 桥 / 原生 `window.ylf` 桥），采用时**优先票据、回退 session**。适合不想手写两段式的场景；但 web 端首次握手仍是 iframe/popup（抗分区不如 redirect）。
+## 兼容通道
 
-```ts
-import { signInWithSso } from '@yunlefun/sso'
+`requestSso` 的 popup/iframe 通道仍可用于兼容场景，但新接入优先顶层重定向。`adoptSession`、`adoptSsoTicket` 和直接转发主站 session 的方式已弃用；Drive 和 CMS 不得调用它们，也不得接收主站 refresh token。
 
-const res = await signInWithSso(auth, { mode: 'silent' }) // 进站静默；未登录再 mode:'interactive'
-```
+## Provider 要求
 
-> 更细的控制：`requestSso()` 只取回结果（含可选 `ticket`），`adoptSsoResult(auth, result)` 按「票据优先、session 回退」注入；自行用 `setCredentials` 适配的站点可只用 `requestSso` + 自己的采用逻辑。
-
-### ⚠️ 坑：`signInWithCustomTicket` 的 v2 签名
-
-CloudBase js-sdk **v2** 的 `auth.signInWithCustomTicket(getTickFn)` 接收一个**返回票据的函数**，不是票据字符串：
-
-```ts
-// ❌ 错（字符串被当函数调用 → 同步抛错、无网络请求、登录静默失败）
-await auth.signInWithCustomTicket(ticket)
-// ✅ 对
-await auth.signInWithCustomTicket(() => Promise.resolve(ticket))
-```
-
-`adoptSsoTicket` / `adoptSsoResult`（≥0.3.1）已按此实现；自己直接调时务必传函数。
-
-### 对账：陈旧登录态要清
-
-`uid` 等登录展示态若缓存在 localStorage，会出现「显示已登录、但真实会话已失效」。最佳实践：**云调用确定性 `LOGIN_REQUIRED` 时清掉本地账号态**（登出），让 UI 反映真实；redirect 登录是一键的事，不必为防误登出而保留无效会话。
-
----
-
-## 主站桥接页（Provider）
-
-`www.yunle.fun/auth/sso` 读本站 session，校验请求方后按 `mode` 回传：
-
-- `silent`（隐藏 iframe）/ `interactive`（弹窗）→ `postMessage` 回传 `{ session, ticket? }`。
-- `redirect`（顶层）→ 校验 `returnUrl` 的 origin 在白名单内（**防开放重定向**），带 `#ylf_sso=<票据>` 跳回；**fragment 只放一次性票据，绝不放 `refresh_token`**（那是被废弃的 implicit flow 反模式）。未登录则先去 `/login` 再回桥接页。
-
-```ts
-import {
-  encodeSsoRedirectResult,
-  isAnonymousSession,
-  readSsoMode,
-  readSsoNonce,
-  readSsoReturnUrl,
-  readSsoTargetOrigin,
-  SSO_REDIRECT_HASH_KEY,
-  SSO_RESULT_TYPE,
-} from '@yunlefun/sso/protocol'
-```
-
-### 票据从哪来：`createTicket`
-
-桥接页凭**登录用户自己的登录态**调一个服务端云函数，函数用 CloudBase 自定义登录私钥 `createTicket(uid)` 签发票据，只签调用者自己的 uid。要点（都踩过）：
-
-```js
-// 云函数（@cloudbase/node-sdk）
-const ctx = cloudbase.getCloudbaseContext()
-const envId = ctx.TCB_ENV || ctx.SCF_NAMESPACE
-const auth = cloudbase.init({
-  env: envId,
-  // ⚠️ credentials 必须带 env_id，且 = 运行时 env，否则报「私钥未包含 env_id」
-  credentials: { env_id: envId, private_key_id, private_key },
-}).auth()
-// ⚠️ refresh / expire 单位是毫秒（不是秒）
-const ticket = auth.createTicket(uid, { refresh: 3600_000, expire: Date.now() + 30 * 86400_000 })
-```
-
-### CloudBase 自定义登录配置（前提）
-
-- 控制台 → 环境 → 登录授权 → **开启自定义登录**、生成签名私钥；或 API `manageAppAuth(createCustomLoginKeys)`（会自动开启 provider）。
-- 把私钥注入签发函数的 env（PEM 建议 `\n` 转义或 base64）。
-- ⚠️ **`createCustomLoginKeys` 是新增、不撤销旧密钥**；轮换/作废旧密钥只能在控制台做。私钥能为任意 uid 签发会话，按高敏密钥管理。
-
----
-
-## API
-
-| 入口                     | 导出                                                                                                                           | 用途                                           |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
-| `@yunlefun/sso`          | `startSsoRedirect` / `consumeSsoRedirect` / `adoptSsoTicket`                                                                   | **推荐**：重定向握手 + 票据采用                |
-| `@yunlefun/sso`          | `signInWithSso` / `requestSso` / `adoptSsoResult` / `adoptSession`                                                             | 一站式 / 取回 / 注入（票据优先、session 回退） |
-| `@yunlefun/sso`          | `isInYunleApp` / `requestSsoNative`                                                                                            | 原生容器内自适配（`window.ylf` 桥）            |
-| `@yunlefun/sso/protocol` | `buildSsoRequestUrl` / `parseSsoResultMessage` / `parseSsoRedirectResult` / `SSO_RESULT_TYPE` / `SSO_REDIRECT_HASH_KEY`        | 子站：构造请求 + 校验回传                      |
-| `@yunlefun/sso/protocol` | `readSsoMode` / `readSsoTargetOrigin` / `readSsoNonce` / `readSsoReturnUrl` / `encodeSsoRedirectResult` / `isAnonymousSession` | 主站：解析子站请求 + 编码回跳结果              |
-
-握手失败原因 `SsoFailureReason`：`not_authenticated`（确认未登录，可清账号态）/ `timeout` / `popup_blocked` / `closed` / `invalid_request` / `not_configured` / `error`（后面这些是「没拿准」，**不要**当登出）。
-
----
-
-## 安全
-
-- **白名单只放第一方域名**——给第三方放行等于把账号钥匙送人。
-- **一次一令 nonce**：redirect 用 sessionStorage 暂存、回跳校验，防 CSRF / 结果注入。
-- **redirect 只在 fragment 传一次性票据**，不传 `refresh_token`。
-- 票据是 mint-any-session 级能力的派生物，签发私钥按高敏密钥管理（控制台轮换、勿入日志/transcript）。
+- `targetOrigin` 必须命中服务端与页面端的同一第一方白名单。
+- redirect 的 `returnUrl.origin` 必须与 `targetOrigin` 完全相等。
+- nonce 必须是 32–128 位 base64url 字符；授权码必须包含 256-bit CSPRNG 熵。
+- `issueSsoCode` 只能通过已认证 SDK 调用；`exchangeSsoCode` 只接受 HTTPS POST 和精确 Origin CORS。
+- 兑换响应使用 `Cache-Control: no-store`、`Pragma: no-cache`、`Referrer-Policy: no-referrer`。
+- `sso_login_codes` 是 server-only 集合；浏览器不可读写，过期/已消费记录由 worker 清理。
 
 ## License
 

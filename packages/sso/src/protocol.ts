@@ -49,6 +49,8 @@ export interface SsoResultMessage {
   /** 原样回传请求方的 nonce，供消费端校验 */
   nonce: string
   reason?: 'invalid_request' | 'not_authenticated'
+  /** v2：绑定请求方 origin 与 nonce 的一次性授权码。 */
+  code?: string
   /** ok === true 时携带的 CloudBase session */
   session?: unknown
   /**
@@ -62,8 +64,15 @@ export interface SsoResultMessage {
 
 /** Consumer 归一化后的结果 */
 export type SsoResult
-  = | { ok: true, session: SsoSession, ticket?: string }
+  = | { ok: true, code: string, nonce: string }
+    | { ok: true, session: SsoSession, ticket?: string }
     | { ok: false, reason: SsoFailureReason }
+
+/** Explicit local-development exception for URL validation. */
+export interface SsoUrlSecurityOptions {
+  /** Permit plain HTTP only for loopback hosts. Defaults to false. */
+  allowHttpLocalhost?: boolean
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object'
@@ -86,12 +95,13 @@ export function readSsoMode(raw: unknown): SsoMode {
 }
 
 /** 解析并归一化 targetOrigin；非法或缺失时返回空串（视为非法请求） */
-export function readSsoTargetOrigin(raw: unknown): string {
+export function readSsoTargetOrigin(raw: unknown, options: SsoUrlSecurityOptions = {}): string {
   const value = firstQueryValue(raw).trim()
   if (!value)
     return ''
   try {
-    return new URL(value).origin
+    const url = new URL(value)
+    return isSecureSsoUrl(url, options) ? url.origin : ''
   }
   catch {
     return ''
@@ -99,23 +109,45 @@ export function readSsoTargetOrigin(raw: unknown): string {
 }
 
 export function readSsoNonce(raw: unknown): string {
-  return firstQueryValue(raw).trim()
+  const value = firstQueryValue(raw).trim()
+  return /^[\w-]{32,128}$/.test(value) ? value : ''
 }
 
 /**
  * 解析 redirect 模式的回跳地址。仅接受 http(s) 绝对 URL；非法/缺失返回空串。
  * 安全：调用方仍须校验其 origin 在白名单内，再用于跳转（防开放重定向）。
  */
-export function readSsoReturnUrl(raw: unknown): string {
+export function readSsoReturnUrl(raw: unknown, options: SsoUrlSecurityOptions = {}): string {
   const value = firstQueryValue(raw).trim()
   if (!value)
     return ''
   try {
     const url = new URL(value)
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : ''
+    return isSecureSsoUrl(url, options) ? url.toString() : ''
   }
   catch {
     return ''
+  }
+}
+
+/** True for HTTPS URLs, plus explicit loopback HTTP in local development. */
+export function isSecureSsoUrl(url: URL, options: SsoUrlSecurityOptions = {}): boolean {
+  if (url.protocol === 'https:')
+    return true
+  return options.allowHttpLocalhost === true
+    && url.protocol === 'http:'
+    && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+}
+
+/** Require redirect return URL and declared target to share the exact same origin. */
+export function isSsoRedirectBoundToTarget(targetOrigin: string, returnUrl: string): boolean {
+  if (!targetOrigin || !returnUrl)
+    return false
+  try {
+    return new URL(returnUrl).origin === targetOrigin
+  }
+  catch {
+    return false
   }
 }
 
@@ -138,15 +170,24 @@ export function buildSsoRequestUrl(input: {
   targetOrigin: string
   nonce: string
   returnUrl?: string
+  allowHttpLocalhost?: boolean
 }): string {
-  const origin = input.ssoOrigin.replace(/\/+$/, '')
+  const options = { allowHttpLocalhost: input.allowHttpLocalhost === true }
+  const origin = readSsoTargetOrigin(input.ssoOrigin, options)
+  const targetOrigin = readSsoTargetOrigin(input.targetOrigin, options)
+  const nonce = readSsoNonce(input.nonce)
+  const returnUrl = input.returnUrl ? readSsoReturnUrl(input.returnUrl, options) : ''
+  if (!origin || !targetOrigin || !nonce)
+    throw new TypeError('invalid secure SSO request')
+  if (input.mode === 'redirect' && (!returnUrl || !isSsoRedirectBoundToTarget(targetOrigin, returnUrl)))
+    throw new TypeError('redirect return URL must match targetOrigin')
   const params = new URLSearchParams({
     [SSO_QUERY_KEYS.mode]: input.mode,
-    [SSO_QUERY_KEYS.targetOrigin]: input.targetOrigin,
-    [SSO_QUERY_KEYS.nonce]: input.nonce,
+    [SSO_QUERY_KEYS.targetOrigin]: targetOrigin,
+    [SSO_QUERY_KEYS.nonce]: nonce,
   })
-  if (input.returnUrl)
-    params.set(SSO_QUERY_KEYS.returnUrl, input.returnUrl)
+  if (returnUrl)
+    params.set(SSO_QUERY_KEYS.returnUrl, returnUrl)
   return `${origin}/auth/sso?${params.toString()}`
 }
 
@@ -176,6 +217,9 @@ export function parseSsoResultMessage(input: {
   if (typeof data.nonce !== 'string' || data.nonce !== expectedNonce)
     return null
 
+  if (data.ok === true && typeof data.code === 'string' && /^[\w-]{43}$/.test(data.code))
+    return { ok: true, code: data.code, nonce: expectedNonce }
+
   if (data.ok === true && isRecord(data.session)) {
     const ticket = typeof data.ticket === 'string' && data.ticket ? data.ticket : undefined
     return ticket
@@ -201,12 +245,14 @@ export const SSO_REDIRECT_HASH_KEY = 'ylf_sso'
 
 /** redirect 链路的归一化结果（仅一次性票据，无 session） */
 export type SsoRedirectResult
-  = | { ok: true, ticket: string }
+  = | { ok: true, code: string, nonce: string }
+    | { ok: true, ticket: string }
     | { ok: false, reason: SsoFailureReason }
 
 interface SsoRedirectPayload {
   nonce: string
   ok: boolean
+  code?: string
   ticket?: string
   reason?: SsoFailureReason
 }
@@ -253,10 +299,13 @@ function readHashParam(hash: string, key: string): string {
 export function encodeSsoRedirectResult(payload: {
   nonce: string
   ok: boolean
+  code?: string
   ticket?: string
   reason?: SsoFailureReason
 }): string {
   const compact: SsoRedirectPayload = { nonce: payload.nonce, ok: payload.ok }
+  if (payload.code)
+    compact.code = payload.code
   if (payload.ticket)
     compact.ticket = payload.ticket
   if (payload.reason)
@@ -289,6 +338,8 @@ export function parseSsoRedirectResult(input: { hash: string, expectedNonce: str
   if (!payload || payload.nonce !== input.expectedNonce)
     return null
 
+  if (payload.ok === true && typeof payload.code === 'string' && /^[\w-]{43}$/.test(payload.code))
+    return { ok: true, code: payload.code, nonce: input.expectedNonce }
   if (payload.ok === true && typeof payload.ticket === 'string' && payload.ticket)
     return { ok: true, ticket: payload.ticket }
   return { ok: false, reason: isSsoFailureReason(payload.reason) ? payload.reason : 'not_authenticated' }

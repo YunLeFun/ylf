@@ -1,0 +1,43 @@
+{
+  "name": "@yunlefun/server-session",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Framework-neutral opaque application sessions with secure H3 helpers",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YunLeFun/ylf.git",
+    "directory": "packages/server-session"
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./h3": {
+      "types": "./dist/h3.d.ts",
+      "import": "./dist/h3.mjs",
+      "require": "./dist/h3.cjs"
+    }
+  },
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "unbuild",
+    "dev": "unbuild --stub",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "h3": "^1.15.4"
+  },
+  "devDependencies": {
+    "h3": "^1.15.4",
+    "unbuild": "^2.0.0"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "@yunlefun/server-session-cloudbase",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Transactional CloudBase NoSQL store for @yunlefun/server-session",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YunLeFun/ylf.git",
+    "directory": "packages/server-session-cloudbase"
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "unbuild",
+    "dev": "unbuild --stub",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "@cloudbase/node-sdk": "^3.18.3"
+  },
+  "dependencies": {
+    "@yunlefun/server-session": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudbase/node-sdk": "^3.18.3",
+    "unbuild": "^2.0.0"
+  }
+}
