@@ -296,7 +296,7 @@ export interface RedirectSsoOptions {
 
 /**
  * 发起**顶层重定向**式 SSO（业界标准的抗存储分区方案）：整页跳到主站桥接页，登录确认后
- * 桥接页带一次性 ticket 跳回 `returnUrl`。本函数让页面导航走人、不会 resolve；回跳后在应用
+ * 桥接页带绑定 origin + nonce 的一次性授权码跳回 `returnUrl`。本函数让页面导航走人、不会 resolve；回跳后在应用
  * 启动时调用 {@link consumeSsoRedirect} 取结果。
  *
  * 相比 {@link requestSso} 的隐藏 iframe / 弹窗：重定向每一跳都是第一方上下文，因此在
@@ -328,7 +328,7 @@ export function startSsoRedirect(options: RedirectSsoOptions = {}): void {
 
 /**
  * 在应用启动时调用：若当前 URL 是一次 SSO 重定向回跳，解析并返回结果，同时**清理地址栏与暂存 nonce**
- * （避免一次性票据残留在历史/地址栏）。不是回跳（或 nonce 不匹配）则返回 null。
+ * （避免一次性授权码残留在历史/地址栏）。不是回跳（或 nonce 不匹配）则返回 null。
  * 成功后用 {@link adoptSsoCode} 原子兑换授权码并采用登录态。
  */
 export function consumeSsoRedirect(): SsoRedirectResult | null {
@@ -358,8 +358,7 @@ export function consumeSsoRedirect(): SsoRedirectResult | null {
   return result
 }
 
-/** 采用 redirect 链路拿到的一次性 ticket：换取子站自己的独立会话。 */
-/** @deprecated New consumers must use {@link adoptSsoCode}; retained for legacy providers only. */
+/** @deprecated Legacy postMessage providers may still expose a ticket; redirect consumers must use {@link adoptSsoCode}. */
 export async function adoptSsoTicket(auth: SsoSetSessionAuth, ticket: string): Promise<boolean> {
   if (!ticket || typeof auth.signInWithCustomTicket !== 'function')
     return false

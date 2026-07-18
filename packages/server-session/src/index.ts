@@ -148,6 +148,12 @@ export interface UserSessionFilter {
   userId: string
 }
 
+/** Ownership-scoped request to revoke one listed session/device. */
+export interface RevokeUserSessionInput extends UserSessionFilter {
+  /** SHA-256 session identifier returned by {@link ServerSessionService.listForUser}. */
+  sessionId: string
+}
+
 /** Framework- and database-neutral persistence port. Mutating methods must be atomic. */
 export interface SessionStore {
   /** Create a session and enforce the concurrent-session cap in one transaction. */
@@ -347,12 +353,27 @@ export class ServerSessionService {
 
     let current = session
     if (now - session.lastSeenAt >= this.#policy.touchIntervalMs) {
-      current = await this.#store.touch({
+      const touched = await this.#store.touch({
         sessionId,
         expectedVersion: session.version,
         lastSeenAt: now,
         idleExpiresAt: Math.min(now + this.#policy.idleTtlMs, session.absoluteExpiresAt),
-      }) ?? session
+      })
+      if (touched) {
+        current = touched
+      }
+      else {
+        // A failed optimistic update may mean a concurrent touch, expiry, or
+        // revocation. Never authenticate from the stale pre-conflict snapshot.
+        const refreshed = await this.#store.findById(sessionId)
+        if (!refreshed)
+          return { ok: false, reason: 'invalid' }
+        if (refreshed.status === 'revoked')
+          return { ok: false, reason: 'revoked' }
+        if (refreshed.status === 'expired' || now >= refreshed.idleExpiresAt || now >= refreshed.absoluteExpiresAt)
+          return { ok: false, reason: 'expired' }
+        current = refreshed
+      }
     }
 
     return {
@@ -404,6 +425,18 @@ export class ServerSessionService {
       return false
     }
     return this.#store.revoke(sessionId, this.#clock.now())
+  }
+
+  /** Revoke one listed session after enforcing its application/user ownership. */
+  async revokeForUser(input: RevokeUserSessionInput): Promise<boolean> {
+    assertIdentityPart('appId', input.appId)
+    assertIdentityPart('userId', input.userId)
+    if (!SHA256_HEX_PATTERN.test(input.sessionId))
+      throw new SessionError('INVALID_INPUT', 'invalid sessionId')
+    const session = await this.#store.findById(input.sessionId)
+    if (!session || session.appId !== input.appId || session.userId !== input.userId)
+      return false
+    return this.#store.revoke(input.sessionId, this.#clock.now())
   }
 
   /** Revoke every other active session for the same app and user. */

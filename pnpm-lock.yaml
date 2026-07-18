@@ -121,7 +121,7 @@ importers:
   packages/server-session:
     devDependencies:
       h3:
-        specifier: ^1.15.4
+        specifier: ^1.15.11
         version: 1.15.11
       unbuild:
         specifier: ^2.0.0

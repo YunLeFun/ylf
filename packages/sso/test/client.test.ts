@@ -142,9 +142,9 @@ describe('startSsoRedirect', () => {
 
 describe('consumeSsoRedirect', () => {
   it('parses a matching result, then clears the nonce and strips the hash', () => {
-    const enc = encodeSsoRedirectResult({ nonce: 'n1', ok: true, ticket: 'tkt-1' })
+    const enc = encodeSsoRedirectResult({ nonce: 'n1', ok: true, code: 'c'.repeat(43) })
     const { replaceState, store } = mockWindow({ hash: `#${SSO_REDIRECT_HASH_KEY}=${enc}`, store: { [NONCE_KEY]: 'n1' } })
-    expect(consumeSsoRedirect()).toEqual({ ok: true, ticket: 'tkt-1' })
+    expect(consumeSsoRedirect()).toEqual({ ok: true, code: 'c'.repeat(43), nonce: 'n1' })
     expect(replaceState).toHaveBeenCalled()
     expect(store.has(NONCE_KEY)).toBe(false)
   })
@@ -164,7 +164,7 @@ describe('consumeSsoRedirect', () => {
   })
 
   it('returns null on a nonce mismatch but still clears the stored nonce', () => {
-    const enc = encodeSsoRedirectResult({ nonce: 'n1', ok: true, ticket: 'tkt-1' })
+    const enc = encodeSsoRedirectResult({ nonce: 'n1', ok: true, code: 'c'.repeat(43) })
     const { store } = mockWindow({ hash: `#${SSO_REDIRECT_HASH_KEY}=${enc}`, store: { [NONCE_KEY]: 'WRONG' } })
     expect(consumeSsoRedirect()).toBeNull()
     expect(store.has(NONCE_KEY)).toBe(false)

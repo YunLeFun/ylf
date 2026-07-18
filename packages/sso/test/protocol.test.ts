@@ -185,11 +185,6 @@ describe('buildSsoRequestUrl (redirect)', () => {
 describe('redirect result encode/parse', () => {
   const hashFor = (value: string) => `#${SSO_REDIRECT_HASH_KEY}=${value}`
 
-  it('round-trips a success result carrying the one-time ticket', () => {
-    const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: true, ticket: 'tkt-xyz' })
-    expect(parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: NONCE })).toEqual({ ok: true, ticket: 'tkt-xyz' })
-  })
-
   it('prefers a bound v2 authorization code and never carries a refresh token', () => {
     const code = 'c'.repeat(43)
     const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: true, code })
@@ -204,20 +199,25 @@ describe('redirect result encode/parse', () => {
   })
 
   it('rejects a nonce mismatch (CSRF / result-injection guard)', () => {
-    const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: true, ticket: 'tkt-xyz' })
+    const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: true, code: 'c'.repeat(43) })
     expect(parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: 'other-nonce' })).toBeNull()
   })
 
   it('returns null with no result in the hash, or an empty expected nonce', () => {
-    const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: true, ticket: 'tkt-xyz' })
+    const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: true, code: 'c'.repeat(43) })
     expect(parseSsoRedirectResult({ hash: '#room=abc', expectedNonce: NONCE })).toBeNull()
     expect(parseSsoRedirectResult({ hash: '', expectedNonce: NONCE })).toBeNull()
     expect(parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: '' })).toBeNull()
   })
 
-  it('treats ok:true without a usable ticket as a failure, and ignores malformed payloads', () => {
-    const noTicket = encodeSsoRedirectResult({ nonce: NONCE, ok: true })
-    expect(parseSsoRedirectResult({ hash: hashFor(noTicket), expectedNonce: NONCE })).toEqual({ ok: false, reason: 'not_authenticated' })
+  it('treats ok:true without a usable code as a failure, rejects legacy ticket fragments, and ignores malformed payloads', () => {
+    const noCode = encodeSsoRedirectResult({ nonce: NONCE, ok: true })
+    const legacyTicket = btoa(JSON.stringify({ nonce: NONCE, ok: true, ticket: 'tkt-xyz' }))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')
+    expect(parseSsoRedirectResult({ hash: hashFor(noCode), expectedNonce: NONCE })).toEqual({ ok: false, reason: 'not_authenticated' })
+    expect(parseSsoRedirectResult({ hash: hashFor(legacyTicket), expectedNonce: NONCE })).toEqual({ ok: false, reason: 'not_authenticated' })
     expect(parseSsoRedirectResult({ hash: hashFor('!!!not-base64!!!'), expectedNonce: NONCE })).toBeNull()
   })
 })

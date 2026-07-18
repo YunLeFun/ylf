@@ -216,6 +216,17 @@ describe('serverSessionService', () => {
     expect((await service.validate(rotated.token)).ok).toBe(true)
   })
 
+  it('fails closed when a concurrent revocation conflicts with activity touch', async () => {
+    const { service, store, advance } = fixture()
+    const issued = await service.create({ appId: 'drive', userId: 'u1' })
+    advance(100)
+    store.touch = async (input) => {
+      await store.revoke(input.sessionId, 1_100)
+      return null
+    }
+    expect(await service.validate(issued.token)).toEqual({ ok: false, reason: 'revoked' })
+  })
+
   it('revokes one session or every other session idempotently', async () => {
     const { service } = fixture()
     const first = await service.create({ appId: 'drive', userId: 'u1' })
@@ -227,5 +238,15 @@ describe('serverSessionService', () => {
     expect(await service.validate(third.token)).toEqual({ ok: false, reason: 'revoked' })
     expect(await service.revoke(second.token)).toBe(true)
     expect(await service.revoke(second.token)).toBe(true)
+  })
+
+  it('revokes a listed session only within its application and user boundary', async () => {
+    const { service } = fixture()
+    const owned = await service.create({ appId: 'drive', userId: 'u1' })
+    const other = await service.create({ appId: 'drive', userId: 'u2' })
+    expect(await service.revokeForUser({ appId: 'drive', userId: 'u1', sessionId: other.session.id })).toBe(false)
+    expect((await service.validate(other.token)).ok).toBe(true)
+    expect(await service.revokeForUser({ appId: 'drive', userId: 'u1', sessionId: owned.session.id })).toBe(true)
+    expect(await service.validate(owned.token)).toEqual({ ok: false, reason: 'revoked' })
   })
 })

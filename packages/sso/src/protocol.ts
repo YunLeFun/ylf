@@ -238,22 +238,21 @@ export function parseSsoResultMessage(input: {
 // 顶层重定向每一跳都在各自源的第一方上下文里，因此免疫第三方 Cookie / 存储分区（Safari ITP 等）
 // —— 这正是隐藏 iframe 静默 SSO 在现代浏览器里失效的根因。结果经**回跳 URL 的 fragment**
 // （`#ylf_sso=<base64url(json)>`）回传：fragment 不发往服务器、不进 Referer。出于安全，redirect
-// 链路**只回传一次性 `ticket`**（绝不回传 refresh_token —— 那是已被废弃的 OAuth implicit flow 反模式）。
+// 链路只回传绑定 origin + nonce 的一次性授权码（绝不回传 CloudBase ticket、access token
+// 或 refresh token）；消费端再通过 HTTPS POST 原子兑换并直接交给官方 SDK。
 
 /** 回跳 URL fragment 中承载结果的键名 */
 export const SSO_REDIRECT_HASH_KEY = 'ylf_sso'
 
-/** redirect 链路的归一化结果（仅一次性票据，无 session） */
+/** redirect 链路的归一化结果（仅绑定的一次性授权码，无 ticket/session） */
 export type SsoRedirectResult
   = | { ok: true, code: string, nonce: string }
-    | { ok: true, ticket: string }
     | { ok: false, reason: SsoFailureReason }
 
 interface SsoRedirectPayload {
   nonce: string
   ok: boolean
   code?: string
-  ticket?: string
   reason?: SsoFailureReason
 }
 
@@ -300,14 +299,11 @@ export function encodeSsoRedirectResult(payload: {
   nonce: string
   ok: boolean
   code?: string
-  ticket?: string
   reason?: SsoFailureReason
 }): string {
   const compact: SsoRedirectPayload = { nonce: payload.nonce, ok: payload.ok }
   if (payload.code)
     compact.code = payload.code
-  if (payload.ticket)
-    compact.ticket = payload.ticket
   if (payload.reason)
     compact.reason = payload.reason
   return encodeBase64Url(JSON.stringify(compact))
@@ -317,7 +313,7 @@ export function encodeSsoRedirectResult(payload: {
  * Consumer 端：从回跳 URL 的 hash 中解析 redirect 结果。
  *
  * - `null`          —— hash 里没有本协议结果（或 nonce 不匹配 / 解码失败），调用方忽略即可。
- * - `{ ok: true }`  —— 成功，带一次性 ticket。
+ * - `{ ok: true }`  —— 成功，带 origin/nonce 绑定的一次性授权码。
  * - `{ ok: false }` —— 是本次结果但失败（未登录 / 非法 / 未配置票据等）。
  *
  * 安全关键：nonce 必须等于本次发起重定向时存下的值（防 CSRF / 结果注入）。
@@ -340,7 +336,5 @@ export function parseSsoRedirectResult(input: { hash: string, expectedNonce: str
 
   if (payload.ok === true && typeof payload.code === 'string' && /^[\w-]{43}$/.test(payload.code))
     return { ok: true, code: payload.code, nonce: input.expectedNonce }
-  if (payload.ok === true && typeof payload.ticket === 'string' && payload.ticket)
-    return { ok: true, ticket: payload.ticket }
   return { ok: false, reason: isSsoFailureReason(payload.reason) ? payload.reason : 'not_authenticated' }
 }

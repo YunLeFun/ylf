@@ -1,7 +1,7 @@
 {
   "name": "@yunlefun/server-session",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Framework-neutral opaque application sessions with secure H3 helpers",
   "license": "MIT",
   "repository": {
@@ -34,10 +34,15 @@
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
-    "h3": "^1.15.4"
+    "h3": "^1.15.11"
+  },
+  "peerDependenciesMeta": {
+    "h3": {
+      "optional": true
+    }
   },
   "devDependencies": {
-    "h3": "^1.15.4",
+    "h3": "^1.15.11",
     "unbuild": "^2.0.0"
   }
 }
