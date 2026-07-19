@@ -15,6 +15,19 @@
 
 SSO 与 server-session 因此不会重复：前者回答“这是谁”，后者回答“这个应用是否仍允许这台设备保持登录”。
 
+## 为什么使用顶层 redirect
+
+隐藏 iframe 依赖第三方 Cookie 或跨站存储可见性，popup 又依赖浏览器保留 opener 与原发起页面；
+Safari ITP、存储分区、微信等移动端 WebView、系统浏览器切换和 popup 拦截都可能破坏这些前提。
+典型表现就是 Provider 已完成登录，却无法再找到等待结果的 Consumer 页面。
+
+顶层 redirect 让 Provider 与 Consumer 的每一跳都运行在各自的第一方上下文中，且不要求两个页面
+同时存活。Consumer 仅在当前 tab 的 `sessionStorage` 保存 nonce 和 PKCE verifier；回跳 URL fragment
+只携带短时、一次性的授权码。即使授权码被截获，没有 verifier 也无法兑换，且消费后不能重放。
+
+因此新 Web Consumer 应把 `startSsoRedirect()` 作为唯一交互登录入口；隐藏 iframe/popup 仅留在
+`@yunlefun/sso/legacy` 供有明确迁移期限的旧客户端或原生 bridge 使用，不应作为登录成功的必要条件。
+
 ## v2 安全流程
 
 1. Consumer 生成 256-bit PKCE verifier，仅保存在当前 tab 的 `sessionStorage`；顶层跳转携带 S256 challenge、HTTPS `targetOrigin`、同 origin `returnUrl` 和 128-bit nonce。
