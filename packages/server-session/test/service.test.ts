@@ -116,6 +116,19 @@ class MemorySessionStore implements SessionStore {
     })
   }
 
+  async revokeAll(filter: UserSessionFilter, revokedAt: number): Promise<number> {
+    return this.#atomic(() => {
+      let count = 0
+      for (const current of this.records.values()) {
+        if (current.appId === filter.appId && current.userId === filter.userId && current.status === 'active') {
+          this.records.set(current.id, { ...current, status: 'revoked', revokedAt, terminatedAt: revokedAt, version: current.version + 1 })
+          count++
+        }
+      }
+      return count
+    })
+  }
+
   async listForUser(filter: UserSessionFilter): Promise<AppSession[]> {
     return [...this.records.values()]
       .filter(session => session.appId === filter.appId && session.userId === filter.userId)
@@ -248,5 +261,17 @@ describe('serverSessionService', () => {
     expect((await service.validate(other.token)).ok).toBe(true)
     expect(await service.revokeForUser({ appId: 'drive', userId: 'u1', sessionId: owned.session.id })).toBe(true)
     expect(await service.validate(owned.token)).toEqual({ ok: false, reason: 'revoked' })
+  })
+
+  it('rejects unbounded metadata and revokes all app sessions after a security event', async () => {
+    const { service } = fixture()
+    await expect(service.create({ appId: ' drive', userId: 'u1' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    await expect(service.create({ appId: 'drive', userId: 'u1', userAgentHash: 'not-a-digest' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    const first = await service.create({ appId: 'drive', userId: 'u1', userAgentHash: 'a'.repeat(64) })
+    const second = await service.create({ appId: 'drive', userId: 'u1' })
+    await service.create({ appId: 'cms', userId: 'u1' })
+    expect(await service.revokeAllForUser({ appId: 'drive', userId: 'u1' })).toBe(2)
+    expect(await service.validate(first.token)).toEqual({ ok: false, reason: 'revoked' })
+    expect(await service.validate(second.token)).toEqual({ ok: false, reason: 'revoked' })
   })
 })

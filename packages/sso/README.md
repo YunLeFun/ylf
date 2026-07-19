@@ -17,7 +17,7 @@ SSO 与 server-session 因此不会重复：前者回答“这是谁”，后者
 
 ## v2 安全流程
 
-1. Consumer 顶层跳转到 `https://www.yunle.fun/auth/sso`，携带 HTTPS `targetOrigin`、同 origin `returnUrl` 和 128-bit nonce。
+1. Consumer 生成 256-bit PKCE verifier，仅保存在当前 tab 的 `sessionStorage`；顶层跳转携带 S256 challenge、HTTPS `targetOrigin`、同 origin `returnUrl` 和 128-bit nonce。
 2. Provider 使用 `auth.getSession()`，检查 `{ data, error }`，要求 `data.session` 且拒绝 `user.is_anonymous`。
 3. 已认证 Provider 调用 `sso-ticket` 的 `issueSsoCode`；云函数从当前调用上下文派生 uid，拒绝任何 `uid`/`subject` 输入。
 4. Provider 在回跳 fragment 中只放 256-bit 一次性授权码和 nonce，不放 CloudBase ticket、access token 或 refresh token。
@@ -38,7 +38,7 @@ pnpm add @yunlefun/sso
 ```ts
 import { startSsoRedirect } from '@yunlefun/sso'
 
-startSsoRedirect()
+await startSsoRedirect()
 ```
 
 应用启动时消费结果并兑换：
@@ -57,7 +57,10 @@ const auth = app.auth
 
 const redirect = consumeSsoRedirect()
 if (redirect?.ok && 'code' in redirect) {
-  await adoptSsoCode(auth, redirect.code, { nonce: redirect.nonce })
+  await adoptSsoCode(auth, redirect.code, {
+    nonce: redirect.nonce,
+    codeVerifier: redirect.codeVerifier,
+  })
 }
 
 const { data, error } = await auth.getSession()
@@ -70,16 +73,16 @@ if (error || !data?.session || data.session.user?.is_anonymous) {
 
 ## 兼容通道
 
-`requestSso` 的 popup/iframe 通道仍可用于兼容场景，但新接入优先顶层重定向。`adoptSession`、`adoptSsoTicket` 和直接转发主站 session 的方式已弃用；Drive 和 CMS 不得调用它们，也不得接收主站 refresh token。
+`requestSso` / `signInWithSso` 的 popup、iframe、native token 通道以及 `adoptSsoResult` / `adoptSession` / `adoptSsoTicket` 已整体隔离到 `@yunlefun/sso/legacy`。根入口只提供授权码 + PKCE；Drive 和 CMS 不得导入 legacy 子路径，也不得接收主站 refresh token。
 
 ## Provider 要求
 
 - `targetOrigin` 必须命中服务端与页面端的同一第一方白名单。
 - redirect 的 `returnUrl.origin` 必须与 `targetOrigin` 完全相等。
-- nonce 必须是 32–128 位 base64url 字符；授权码必须包含 256-bit CSPRNG 熵。
+- nonce 必须是 32–128 位 base64url 字符；授权码必须包含 256-bit CSPRNG 熵；授权码必须绑定 S256 PKCE challenge。
 - `issueSsoCode` 只能通过已认证 SDK 调用；`exchangeSsoCode` 只接受 HTTPS POST 和精确 Origin CORS。
 - 兑换响应使用 `Cache-Control: no-store`、`Pragma: no-cache`、`Referrer-Policy: no-referrer`。
-- `sso_login_codes` 是 server-only 集合；浏览器不可读写，过期/已消费记录由 worker 清理。
+- `sso_login_codes` 与 `sso_security_limits` 是 server-only 集合；浏览器不可读写，过期记录由不可公网调用的定时 worker 清理。
 
 ## License
 

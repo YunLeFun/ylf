@@ -103,6 +103,7 @@ class FakeDatabase implements CloudBaseDatabase {
         },
         remove: async () => {
           records.delete(id)
+          return { removed: 1 }
         },
       }),
       where: condition => new FakeQuery(() => [...records.values()].map(value => structuredClone(value)), condition),
@@ -221,6 +222,67 @@ describe('cloudBaseSessionStore', () => {
     await expect(service.revoke(issued.token)).rejects.toMatchObject({ code: 'SESSION_CONFLICT' })
   })
 
+  it('revokes all app sessions for a security event and cleans retained terminal records', async () => {
+    const { service, sweeper, now } = fixture()
+    const first = await service.create({ appId: 'drive', userId: 'u1' })
+    const second = await service.create({ appId: 'drive', userId: 'u1' })
+    expect(await service.revokeAllForUser({ appId: 'drive', userId: 'u1' })).toBe(2)
+    expect(await service.validate(first.token)).toEqual({ ok: false, reason: 'revoked' })
+    expect(await service.validate(second.token)).toEqual({ ok: false, reason: 'revoked' })
+    expect(await sweeper.sweepTerminal({ now: now() + 86_400_000, retentionMs: 86_400_000, limit: 10 })).toEqual({ scanned: 2, removed: 2 })
+  })
+
+  it('conservatively removes retained schema-v1 terminal records without terminatedAt', async () => {
+    const { database, sweeper } = fixture()
+    const id = 'e'.repeat(64)
+    database.documents.set('ylf_app_sessions', new Map([[id, {
+      _id: id,
+      recordType: 'session',
+      schemaVersion: 1,
+      appId: 'drive',
+      userId: 'u1',
+      status: 'revoked',
+      createdAt: 100,
+      rotatedAt: 100,
+      lastSeenAt: 100,
+      idleExpiresAt: 200,
+      absoluteExpiresAt: 300,
+      revokedAt: 150,
+      version: 2,
+    }]]))
+
+    await expect(sweeper.sweepTerminal({ now: 86_400_301, retentionMs: 86_400_000, limit: 10 }))
+      .resolves
+      .toEqual({ scanned: 1, removed: 1 })
+    expect(database.documents.get('ylf_app_sessions')?.has(id)).toBe(false)
+  })
+
+  it('does not let the legacy fallback purge a recently terminated schema-v2 session', async () => {
+    const { database, sweeper } = fixture()
+    const id = 'f'.repeat(64)
+    database.documents.set('ylf_app_sessions', new Map([[id, {
+      _id: id,
+      recordType: 'session',
+      schemaVersion: 2,
+      appId: 'drive',
+      userId: 'u1',
+      status: 'revoked',
+      createdAt: 100,
+      rotatedAt: 100,
+      lastSeenAt: 100,
+      idleExpiresAt: 200,
+      absoluteExpiresAt: 300,
+      revokedAt: 86_400_250,
+      terminatedAt: 86_400_250,
+      version: 2,
+    }]]))
+
+    await expect(sweeper.sweepTerminal({ now: 86_400_301, retentionMs: 86_400_000, limit: 10 }))
+      .resolves
+      .toEqual({ scanned: 0, removed: 0 })
+    expect(database.documents.get('ylf_app_sessions')?.has(id)).toBe(true)
+  })
+
   it('exports the exact server-only collection and index manifest', () => {
     expect(CLOUD_BASE_SESSION_COLLECTION_MANIFEST).toEqual({
       collection: 'ylf_app_sessions',
@@ -256,6 +318,15 @@ describe('cloudBaseSessionStore', () => {
             { field: 'idleExpiresAt', order: 'asc' },
           ],
           purpose: 'idle-expiry sweeping',
+        },
+        {
+          name: 'status_terminated',
+          unique: false,
+          fields: [
+            { field: 'status', order: 'asc' },
+            { field: 'terminatedAt', order: 'asc' },
+          ],
+          purpose: 'bounded retention cleanup for revoked and expired sessions',
         },
       ],
       retention: { terminalRecordDays: 90 },

@@ -47,6 +47,8 @@ export interface AppSession {
   absoluteExpiresAt: number
   /** Revocation time when status is `revoked`. */
   revokedAt?: number
+  /** Terminal lifecycle time for retention cleanup. */
+  terminatedAt?: number
   /** Optional user-facing device label. */
   deviceLabel?: string
   /** Optional privacy-preserving user-agent digest. */
@@ -170,6 +172,8 @@ export interface SessionStore {
   revoke: (sessionId: string, revokedAt: number) => Promise<boolean>
   /** Revoke all other active sessions for the same application and user. */
   revokeOthers: (filter: UserSessionFilter, currentSessionId: string, revokedAt: number) => Promise<number>
+  /** Revoke all active sessions for the same application and user after a security event. */
+  revokeAll: (filter: UserSessionFilter, revokedAt: number) => Promise<number>
   /** List safe session metadata for device management. */
   listForUser: (filter: UserSessionFilter) => Promise<AppSession[]>
 }
@@ -212,13 +216,29 @@ function validatePolicy(policy: SessionPolicy): void {
     throw new SessionError('INVALID_INPUT', 'idleTtlMs cannot exceed absoluteTtlMs')
   if (policy.touchIntervalMs > policy.idleTtlMs)
     throw new SessionError('INVALID_INPUT', 'touchIntervalMs cannot exceed idleTtlMs')
-  if (policy.maxSessions > 100)
-    throw new SessionError('INVALID_INPUT', 'maxSessions cannot exceed 100')
+  if (policy.maxSessions > 32)
+    throw new SessionError('INVALID_INPUT', 'maxSessions cannot exceed 32')
 }
 
 function assertIdentityPart(name: string, value: string): void {
-  if (!value.trim() || value.length > 128)
+  if (!value.trim() || value !== value.trim() || value.length > 128 || /\p{Cc}/u.test(value))
     throw new SessionError('INVALID_INPUT', `${name} must contain 1 to 128 characters`)
+}
+
+function readOptionalLabel(value: string | undefined): string | undefined {
+  if (value === undefined)
+    return undefined
+  if (value !== value.trim() || !value || value.length > 128 || /\p{Cc}/u.test(value))
+    throw new SessionError('INVALID_INPUT', 'deviceLabel must contain 1 to 128 printable characters')
+  return value
+}
+
+function readOptionalSha256(name: string, value: string | undefined): string | undefined {
+  if (value === undefined)
+    return undefined
+  if (!SHA256_HEX_PATTERN.test(value))
+    throw new SessionError('INVALID_INPUT', `${name} must be a lowercase SHA-256 digest`)
+  return value
 }
 
 /** Create a URL-safe opaque token containing exactly 256 bits of entropy. */
@@ -304,6 +324,9 @@ export class ServerSessionService {
   async create(input: CreateSessionInput): Promise<IssuedSession> {
     assertIdentityPart('appId', input.appId)
     assertIdentityPart('userId', input.userId)
+    const deviceLabel = readOptionalLabel(input.deviceLabel)
+    const userAgentHash = readOptionalSha256('userAgentHash', input.userAgentHash)
+    const ipPrefixHash = readOptionalSha256('ipPrefixHash', input.ipPrefixHash)
     const now = this.#clock.now()
     const token = this.#nextToken()
     const session: AppSession = {
@@ -316,9 +339,9 @@ export class ServerSessionService {
       lastSeenAt: now,
       idleExpiresAt: Math.min(now + this.#policy.idleTtlMs, now + this.#policy.absoluteTtlMs),
       absoluteExpiresAt: now + this.#policy.absoluteTtlMs,
-      ...(input.deviceLabel ? { deviceLabel: input.deviceLabel } : {}),
-      ...(input.userAgentHash ? { userAgentHash: input.userAgentHash } : {}),
-      ...(input.ipPrefixHash ? { ipPrefixHash: input.ipPrefixHash } : {}),
+      ...(deviceLabel ? { deviceLabel } : {}),
+      ...(userAgentHash ? { userAgentHash } : {}),
+      ...(ipPrefixHash ? { ipPrefixHash } : {}),
       version: 1,
     }
     const stored = await this.#store.createAndEnforceLimit({
@@ -402,6 +425,7 @@ export class ServerSessionService {
       version: current.version + 1,
     }
     delete nextSession.revokedAt
+    delete nextSession.terminatedAt
 
     const stored = await this.#store.rotate({
       currentSessionId: current.id,
@@ -453,6 +477,13 @@ export class ServerSessionService {
       validation.session.id,
       this.#clock.now(),
     )
+  }
+
+  /** Revoke every active session for an application/user after password reset, disablement, or compromise. */
+  revokeAllForUser(filter: UserSessionFilter): Promise<number> {
+    assertIdentityPart('appId', filter.appId)
+    assertIdentityPart('userId', filter.userId)
+    return this.#store.revokeAll(filter, this.#clock.now())
   }
 
   /** List a user's session/device metadata without exposing bearer material. */

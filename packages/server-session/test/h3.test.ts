@@ -37,6 +37,9 @@ describe('h3 session security helpers', () => {
     const { event: rejected } = createNodeEvent({ origin: 'https://evil.example' })
     expect(() => assertRequestOrigin(rejected, { allowedOrigins: ['https://drive.yunle.fun'] })).toThrow(SessionError)
 
+    const { event: crossSite } = createNodeEvent({ 'origin': 'https://drive.yunle.fun', 'sec-fetch-site': 'cross-site' })
+    expect(() => assertRequestOrigin(crossSite, { allowedOrigins: ['https://drive.yunle.fun'] })).toThrow(SessionError)
+
     const { event: local } = createNodeEvent({ origin: 'http://localhost:3000' })
     expect(assertRequestOrigin(local, { allowedOrigins: ['http://localhost:3000'], allowHttpLocalhost: true })).toBe('http://localhost:3000')
   })

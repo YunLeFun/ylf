@@ -20,6 +20,9 @@ export const SSO_QUERY_KEYS = {
   nonce: 'nonce',
   /** redirect 模式：登录完成后回跳的子站地址 */
   returnUrl: 'returnUrl',
+  /** RFC 7636 / RFC 9700 PKCE S256 challenge. */
+  codeChallenge: 'codeChallenge',
+  codeChallengeMethod: 'codeChallengeMethod',
 } as const
 
 export type SsoMode = 'silent' | 'interactive' | 'redirect'
@@ -64,7 +67,7 @@ export interface SsoResultMessage {
 
 /** Consumer 归一化后的结果 */
 export type SsoResult
-  = | { ok: true, code: string, nonce: string }
+  = | { ok: true, code: string, nonce: string, codeVerifier?: string }
     | { ok: true, session: SsoSession, ticket?: string }
     | { ok: false, reason: SsoFailureReason }
 
@@ -113,6 +116,32 @@ export function readSsoNonce(raw: unknown): string {
   return /^[\w-]{32,128}$/.test(value) ? value : ''
 }
 
+/** Parse a PKCE S256 challenge. YunLeFun always derives it from 32 random bytes. */
+export function readSsoCodeChallenge(raw: unknown): string {
+  const value = firstQueryValue(raw).trim()
+  return /^[\w-]{43}$/.test(value) ? value : ''
+}
+
+/** Accept only S256; plain PKCE is intentionally unsupported. */
+export function readSsoCodeChallengeMethod(raw: unknown): 'S256' | '' {
+  return firstQueryValue(raw) === 'S256' ? 'S256' : ''
+}
+
+/** Validate a high-entropy PKCE verifier. */
+export function isSsoPkceVerifier(value: unknown): value is string {
+  return typeof value === 'string' && /^[\w.~-]{43,128}$/.test(value)
+}
+
+/** Derive the base64url SHA-256 PKCE challenge without exposing the verifier. */
+export async function deriveSsoPkceChallenge(verifier: string): Promise<string> {
+  if (!isSsoPkceVerifier(verifier))
+    throw new TypeError('invalid PKCE verifier')
+  if (!globalThis.crypto?.subtle)
+    throw new TypeError('Web Crypto is unavailable')
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))
+  return bytesToBase64Url(new Uint8Array(digest))
+}
+
 /**
  * 解析 redirect 模式的回跳地址。仅接受 http(s) 绝对 URL；非法/缺失返回空串。
  * 安全：调用方仍须校验其 origin 在白名单内，再用于跳转（防开放重定向）。
@@ -123,7 +152,12 @@ export function readSsoReturnUrl(raw: unknown, options: SsoUrlSecurityOptions = 
     return ''
   try {
     const url = new URL(value)
-    return isSecureSsoUrl(url, options) ? url.toString() : ''
+    if (!isSecureSsoUrl(url, options))
+      return ''
+    // The callback fragment is owned by the SSO result. Do not carry caller-provided
+    // fragments (which may contain application secrets) through the identity provider.
+    url.hash = ''
+    return url.toString()
   }
   catch {
     return ''
@@ -132,6 +166,8 @@ export function readSsoReturnUrl(raw: unknown, options: SsoUrlSecurityOptions = 
 
 /** True for HTTPS URLs, plus explicit loopback HTTP in local development. */
 export function isSecureSsoUrl(url: URL, options: SsoUrlSecurityOptions = {}): boolean {
+  if (url.username || url.password)
+    return false
   if (url.protocol === 'https:')
     return true
   return options.allowHttpLocalhost === true
@@ -169,6 +205,7 @@ export function buildSsoRequestUrl(input: {
   mode: SsoMode
   targetOrigin: string
   nonce: string
+  codeChallenge: string
   returnUrl?: string
   allowHttpLocalhost?: boolean
 }): string {
@@ -176,8 +213,9 @@ export function buildSsoRequestUrl(input: {
   const origin = readSsoTargetOrigin(input.ssoOrigin, options)
   const targetOrigin = readSsoTargetOrigin(input.targetOrigin, options)
   const nonce = readSsoNonce(input.nonce)
+  const codeChallenge = readSsoCodeChallenge(input.codeChallenge)
   const returnUrl = input.returnUrl ? readSsoReturnUrl(input.returnUrl, options) : ''
-  if (!origin || !targetOrigin || !nonce)
+  if (!origin || !targetOrigin || !nonce || !codeChallenge)
     throw new TypeError('invalid secure SSO request')
   if (input.mode === 'redirect' && (!returnUrl || !isSsoRedirectBoundToTarget(targetOrigin, returnUrl)))
     throw new TypeError('redirect return URL must match targetOrigin')
@@ -185,6 +223,8 @@ export function buildSsoRequestUrl(input: {
     [SSO_QUERY_KEYS.mode]: input.mode,
     [SSO_QUERY_KEYS.targetOrigin]: targetOrigin,
     [SSO_QUERY_KEYS.nonce]: nonce,
+    [SSO_QUERY_KEYS.codeChallenge]: codeChallenge,
+    [SSO_QUERY_KEYS.codeChallengeMethod]: 'S256',
   })
   if (returnUrl)
     params.set(SSO_QUERY_KEYS.returnUrl, returnUrl)
@@ -246,7 +286,7 @@ export const SSO_REDIRECT_HASH_KEY = 'ylf_sso'
 
 /** redirect 链路的归一化结果（仅绑定的一次性授权码，无 ticket/session） */
 export type SsoRedirectResult
-  = | { ok: true, code: string, nonce: string }
+  = | { ok: true, code: string, nonce: string, codeVerifier?: string }
     | { ok: false, reason: SsoFailureReason }
 
 interface SsoRedirectPayload {
@@ -270,8 +310,15 @@ function isSsoFailureReason(value: unknown): value is SsoFailureReason {
   return typeof value === 'string' && (SSO_FAILURE_REASONS as readonly string[]).includes(value)
 }
 
+function bytesToBase64Url(input: Uint8Array): string {
+  let binary = ''
+  for (const byte of input)
+    binary += String.fromCharCode(byte)
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
 function encodeBase64Url(input: string): string {
-  return btoa(input).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return bytesToBase64Url(new TextEncoder().encode(input))
 }
 
 function decodeBase64Url(input: string): string {
@@ -285,10 +332,31 @@ function readHashParam(hash: string, key: string): string {
     const eq = part.indexOf('=')
     if (eq === -1)
       continue
-    if (decodeURIComponent(part.slice(0, eq)) === key)
-      return decodeURIComponent(part.slice(eq + 1))
+    try {
+      if (decodeURIComponent(part.slice(0, eq)) === key)
+        return decodeURIComponent(part.slice(eq + 1))
+    }
+    catch {
+      continue
+    }
   }
   return ''
+}
+
+/** True when the fragment contains a syntactically recognizable SSO result key. */
+export function hasSsoRedirectResult(hash: string): boolean {
+  const body = hash.startsWith('#') ? hash.slice(1) : hash
+  return body.split('&').some((part) => {
+    const eq = part.indexOf('=')
+    if (eq === -1)
+      return false
+    try {
+      return decodeURIComponent(part.slice(0, eq)) === SSO_REDIRECT_HASH_KEY
+    }
+    catch {
+      return false
+    }
+  })
 }
 
 /**

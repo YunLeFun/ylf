@@ -31,6 +31,7 @@ describe('isInYunleApp', () => {
 
 describe('requestSsoNative', () => {
   const session = { access_token: 'at', refresh_token: 'rt' }
+  const code = 'C'.repeat(32)
 
   it('returns not_authenticated outside the container', async () => {
     expect(await requestSsoNative()).toEqual({ ok: false, reason: 'not_authenticated' })
@@ -47,15 +48,16 @@ describe('requestSsoNative', () => {
   })
 
   it('falls back to getAuthCode + exchange, surfacing sibling user into session.user', async () => {
-    setBridge({ inYunleApp: true, getAuthCode: async () => ({ code: 'C' }) })
+    setBridge({ inYunleApp: true, getAuthCode: async () => ({ code }) })
     const user = { id: 'u1', nickname: 'N', avatar: 'a.png' }
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ data: { session, user } }) }))
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => ({ ok: true, json: async () => ({ data: { session, user } }) }))
     g.fetch = fetchMock
     expect(await requestSsoNative({ exchangeUrl: 'https://apps.example/exchange' })).toEqual({
       ok: true,
       session: { ...session, user },
     })
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ credentials: 'omit', redirect: 'error' })
   })
 
   it('returns not_authenticated when getAuthCode yields no code', async () => {
@@ -64,8 +66,16 @@ describe('requestSsoNative', () => {
   })
 
   it('returns error when the exchange request fails', async () => {
-    setBridge({ inYunleApp: true, getAuthCode: async () => ({ code: 'C' }) })
+    setBridge({ inYunleApp: true, getAuthCode: async () => ({ code }) })
     g.fetch = vi.fn(async () => ({ ok: false }))
     expect(await requestSsoNative()).toEqual({ ok: false, reason: 'error' })
+  })
+
+  it('rejects a non-HTTPS exchange endpoint before sending the code', async () => {
+    setBridge({ inYunleApp: true, getAuthCode: async () => ({ code }) })
+    const fetchMock = vi.fn()
+    g.fetch = fetchMock
+    expect(await requestSsoNative({ exchangeUrl: 'http://evil.example/exchange' })).toEqual({ ok: false, reason: 'not_configured' })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

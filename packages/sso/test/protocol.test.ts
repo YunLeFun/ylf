@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildSsoRequestUrl,
+  deriveSsoPkceChallenge,
   encodeSsoRedirectResult,
   firstQueryValue,
   isAnonymousSession,
   isSsoRedirectBoundToTarget,
   parseSsoRedirectResult,
   parseSsoResultMessage,
+  readSsoCodeChallenge,
+  readSsoCodeChallengeMethod,
   readSsoMode,
   readSsoNonce,
   readSsoReturnUrl,
@@ -17,6 +20,7 @@ import {
 
 const ORIGIN = 'https://www.yunle.fun'
 const NONCE = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6'
+const CODE_CHALLENGE = 'c'.repeat(43)
 
 describe('firstQueryValue', () => {
   it('normalizes string / array / missing', () => {
@@ -40,6 +44,7 @@ describe('provider-side request parsing', () => {
     expect(readSsoTargetOrigin('http://localhost:2333')).toBe('')
     expect(readSsoTargetOrigin('http://localhost:2333', { allowHttpLocalhost: true })).toBe('http://localhost:2333')
     expect(readSsoTargetOrigin('http://drive.yunle.fun')).toBe('')
+    expect(readSsoTargetOrigin('https://user:password@apps.yunle.fun')).toBe('')
     expect(readSsoTargetOrigin('not-a-url')).toBe('')
     expect(readSsoTargetOrigin(undefined)).toBe('')
   })
@@ -48,6 +53,14 @@ describe('provider-side request parsing', () => {
     expect(readSsoNonce(`  ${NONCE}  `)).toBe(NONCE)
     expect(readSsoNonce('too-short')).toBe('')
     expect(readSsoNonce(undefined)).toBe('')
+  })
+
+  it('requires PKCE S256 and derives the RFC 7636 challenge', async () => {
+    expect(readSsoCodeChallenge(CODE_CHALLENGE)).toBe(CODE_CHALLENGE)
+    expect(readSsoCodeChallenge('short')).toBe('')
+    expect(readSsoCodeChallengeMethod('S256')).toBe('S256')
+    expect(readSsoCodeChallengeMethod('plain')).toBe('')
+    expect(await deriveSsoPkceChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk')).toBe('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM')
   })
 
   it('isAnonymousSession only flags anonymous users', () => {
@@ -66,6 +79,7 @@ describe('buildSsoRequestUrl', () => {
       mode: 'silent',
       targetOrigin: 'https://apps.yunle.fun',
       nonce: NONCE,
+      codeChallenge: CODE_CHALLENGE,
     })
     const parsed = new URL(url)
     expect(parsed.origin).toBe(ORIGIN)
@@ -73,6 +87,8 @@ describe('buildSsoRequestUrl', () => {
     expect(parsed.searchParams.get('mode')).toBe('silent')
     expect(parsed.searchParams.get('targetOrigin')).toBe('https://apps.yunle.fun')
     expect(parsed.searchParams.get('nonce')).toBe(NONCE)
+    expect(parsed.searchParams.get('codeChallenge')).toBe(CODE_CHALLENGE)
+    expect(parsed.searchParams.get('codeChallengeMethod')).toBe('S256')
   })
 })
 
@@ -154,6 +170,8 @@ describe('readSsoReturnUrl', () => {
     expect(readSsoReturnUrl('https://wenta.example/path?x=1')).toBe('https://wenta.example/path?x=1')
     expect(readSsoReturnUrl('http://localhost:5173/')).toBe('')
     expect(readSsoReturnUrl('http://localhost:5173/', { allowHttpLocalhost: true })).toBe('http://localhost:5173/')
+    expect(readSsoReturnUrl('https://wenta.example/path#private-fragment')).toBe('https://wenta.example/path')
+    expect(readSsoReturnUrl('https://user:password@wenta.example/path')).toBe('')
     expect(readSsoReturnUrl('javascript:alert(1)')).toBe('')
     expect(readSsoReturnUrl('not-a-url')).toBe('')
     expect(readSsoReturnUrl(undefined)).toBe('')
@@ -167,7 +185,7 @@ describe('readSsoReturnUrl', () => {
 
 describe('buildSsoRequestUrl (redirect)', () => {
   it('includes returnUrl only when provided', () => {
-    const base = buildSsoRequestUrl({ ssoOrigin: ORIGIN, mode: 'interactive', targetOrigin: 'https://wenta.example', nonce: NONCE })
+    const base = buildSsoRequestUrl({ ssoOrigin: ORIGIN, mode: 'interactive', targetOrigin: 'https://wenta.example', nonce: NONCE, codeChallenge: CODE_CHALLENGE })
     expect(base).not.toContain('returnUrl')
 
     const url = new URL(buildSsoRequestUrl({
@@ -175,6 +193,7 @@ describe('buildSsoRequestUrl (redirect)', () => {
       mode: 'redirect',
       targetOrigin: 'https://wenta.example',
       nonce: NONCE,
+      codeChallenge: CODE_CHALLENGE,
       returnUrl: 'https://wenta.example/deck?x=1',
     }))
     expect(url.searchParams.get('mode')).toBe('redirect')
@@ -219,5 +238,6 @@ describe('redirect result encode/parse', () => {
     expect(parseSsoRedirectResult({ hash: hashFor(noCode), expectedNonce: NONCE })).toEqual({ ok: false, reason: 'not_authenticated' })
     expect(parseSsoRedirectResult({ hash: hashFor(legacyTicket), expectedNonce: NONCE })).toEqual({ ok: false, reason: 'not_authenticated' })
     expect(parseSsoRedirectResult({ hash: hashFor('!!!not-base64!!!'), expectedNonce: NONCE })).toBeNull()
+    expect(() => parseSsoRedirectResult({ hash: '#ylf_sso=%E0%A4%A', expectedNonce: NONCE })).not.toThrow()
   })
 })

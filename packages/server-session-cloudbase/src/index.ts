@@ -16,7 +16,7 @@ import { SessionError } from '@yunlefun/server-session'
 export const CLOUD_BASE_SESSION_COLLECTION = 'ylf_app_sessions'
 
 /** Supported persisted schema version. */
-export const CLOUD_BASE_SESSION_SCHEMA_VERSION = 1
+export const CLOUD_BASE_SESSION_SCHEMA_VERSION = 2
 
 /** One field in a CloudBase composite index. */
 export interface CloudBaseSessionIndexField {
@@ -62,6 +62,15 @@ export const CLOUD_BASE_SESSION_INDEXES: readonly CloudBaseSessionIndexDefinitio
       { field: 'idleExpiresAt', order: 'asc' },
     ],
     purpose: 'idle-expiry sweeping',
+  },
+  {
+    name: 'status_terminated',
+    unique: false,
+    fields: [
+      { field: 'status', order: 'asc' },
+      { field: 'terminatedAt', order: 'asc' },
+    ],
+    purpose: 'bounded retention cleanup for revoked and expired sessions',
   },
 ] as const
 
@@ -139,6 +148,19 @@ export interface SweepExpiredSessionsResult {
   expired: number
 }
 
+/** Bounded terminal-record cleanup request. */
+export interface SweepTerminalSessionsInput {
+  now: number
+  retentionMs: number
+  limit?: number
+}
+
+/** Terminal-record cleanup outcome. */
+export interface SweepTerminalSessionsResult {
+  scanned: number
+  removed: number
+}
+
 interface AppSessionDocument extends Record<string, unknown> {
   _id: string
   recordType: 'session'
@@ -202,7 +224,7 @@ function documentList(result: CloudBaseGetResult): Record<string, unknown>[] {
 
 function assertCloudBaseResult(result: unknown, requireUpdated = false): void {
   if (!isRecord(result))
-    return
+    throw new SessionError('STORE_ERROR', 'CloudBase database operation returned an invalid result')
   if (result.code !== undefined && result.code !== 0 && result.code !== '0')
     throw new SessionError('STORE_ERROR', typeof result.message === 'string' ? result.message : 'CloudBase database operation failed')
   if (!requireUpdated)
@@ -234,6 +256,7 @@ function sessionToDocument(session: AppSession): AppSessionDocument {
     idleExpiresAt: session.idleExpiresAt,
     absoluteExpiresAt: session.absoluteExpiresAt,
     ...(session.revokedAt === undefined ? {} : { revokedAt: session.revokedAt }),
+    ...(session.terminatedAt === undefined ? {} : { terminatedAt: session.terminatedAt }),
     ...(session.deviceLabel === undefined ? {} : { deviceLabel: session.deviceLabel }),
     ...(session.userAgentHash === undefined ? {} : { userAgentHash: session.userAgentHash }),
     ...(session.ipPrefixHash === undefined ? {} : { ipPrefixHash: session.ipPrefixHash }),
@@ -247,7 +270,7 @@ function writableDocument(record: Record<string, unknown>): Record<string, unkno
 }
 
 function documentToSession(record: Record<string, unknown>): AppSession {
-  if (record.recordType !== 'session' || record.schemaVersion !== CLOUD_BASE_SESSION_SCHEMA_VERSION)
+  if (record.recordType !== 'session' || (record.schemaVersion !== 1 && record.schemaVersion !== CLOUD_BASE_SESSION_SCHEMA_VERSION))
     throw new SessionError('STORE_ERROR', 'unsupported session document')
   const status = readString(record, 'status')
   if (status !== 'active' && status !== 'revoked' && status !== 'expired')
@@ -261,6 +284,7 @@ function documentToSession(record: Record<string, unknown>): AppSession {
     return value
   }
   const revokedAt = record.revokedAt === undefined ? undefined : readNumber(record, 'revokedAt')
+  const terminatedAt = record.terminatedAt === undefined ? undefined : readNumber(record, 'terminatedAt')
   const deviceLabel = optionalString('deviceLabel')
   const userAgentHash = optionalString('userAgentHash')
   const ipPrefixHash = optionalString('ipPrefixHash')
@@ -275,6 +299,7 @@ function documentToSession(record: Record<string, unknown>): AppSession {
     idleExpiresAt: readNumber(record, 'idleExpiresAt'),
     absoluteExpiresAt: readNumber(record, 'absoluteExpiresAt'),
     ...(revokedAt === undefined ? {} : { revokedAt }),
+    ...(terminatedAt === undefined ? {} : { terminatedAt }),
     ...(deviceLabel === undefined ? {} : { deviceLabel }),
     ...(userAgentHash === undefined ? {} : { userAgentHash }),
     ...(ipPrefixHash === undefined ? {} : { ipPrefixHash }),
@@ -303,7 +328,7 @@ function readIndex(record: Record<string, unknown> | null, filter: UserSessionFi
     return emptyIndex(filter)
   if (
     record.recordType !== 'user_index'
-    || record.schemaVersion !== CLOUD_BASE_SESSION_SCHEMA_VERSION
+    || (record.schemaVersion !== 1 && record.schemaVersion !== CLOUD_BASE_SESSION_SCHEMA_VERSION)
     || record.appId !== filter.appId
     || record.userId !== filter.userId
     || !Array.isArray(record.active)
@@ -327,7 +352,7 @@ function readIndex(record: Record<string, unknown> | null, filter: UserSessionFi
 }
 
 function nextIndex(index: UserSessionIndexDocument, active: SessionIndexEntry[]): UserSessionIndexDocument {
-  return { ...index, active, version: index.version + 1 }
+  return { ...index, schemaVersion: CLOUD_BASE_SESSION_SCHEMA_VERSION, active, version: index.version + 1 }
 }
 
 function sortedUniqueEntries(entries: readonly SessionIndexEntry[]): SessionIndexEntry[] {
@@ -383,6 +408,7 @@ export class CloudBaseSessionStore implements SessionStore {
               ...session,
               status: 'revoked',
               revokedAt: input.session.createdAt,
+              terminatedAt: input.session.createdAt,
               version: session.version + 1,
             })))
           }
@@ -455,6 +481,7 @@ export class CloudBaseSessionStore implements SessionStore {
           ...current,
           status: 'revoked',
           revokedAt: input.rotatedAt,
+          terminatedAt: input.rotatedAt,
           version: current.version + 1,
         })))
         for (const entry of evicted) {
@@ -467,6 +494,7 @@ export class CloudBaseSessionStore implements SessionStore {
               ...session,
               status: 'revoked',
               revokedAt: input.rotatedAt,
+              terminatedAt: input.rotatedAt,
               version: session.version + 1,
             })))
           }
@@ -500,7 +528,12 @@ export class CloudBaseSessionStore implements SessionStore {
         ) {
           return false
         }
-        await updateDocument(ref, writableDocument(sessionToDocument({ ...session, status: 'expired', version: session.version + 1 })))
+        await updateDocument(ref, writableDocument(sessionToDocument({
+          ...session,
+          status: 'expired',
+          terminatedAt: input.expiredAt,
+          version: session.version + 1,
+        })))
         await this.#removeFromIndex(transaction, session)
         return true
       }, this.#transactionRetryTimes)
@@ -521,7 +554,7 @@ export class CloudBaseSessionStore implements SessionStore {
         const session = documentToSession(record)
         if (session.status !== 'active')
           return true
-        await updateDocument(ref, writableDocument(sessionToDocument({ ...session, status: 'revoked', revokedAt, version: session.version + 1 })))
+        await updateDocument(ref, writableDocument(sessionToDocument({ ...session, status: 'revoked', revokedAt, terminatedAt: revokedAt, version: session.version + 1 })))
         await this.#removeFromIndex(transaction, session)
         return true
       }, this.#transactionRetryTimes)
@@ -548,6 +581,7 @@ export class CloudBaseSessionStore implements SessionStore {
               ...session,
               status: 'revoked',
               revokedAt,
+              terminatedAt: revokedAt,
               version: session.version + 1,
             })))
           }
@@ -561,12 +595,44 @@ export class CloudBaseSessionStore implements SessionStore {
     }
   }
 
+  async revokeAll(filter: UserSessionFilter, revokedAt: number): Promise<number> {
+    try {
+      return await this.#database.runTransaction(async (transaction) => {
+        const collection = transaction.collection(this.#collectionName)
+        const indexRef = collection.doc(indexDocumentId(filter))
+        const index = readIndex(firstDocument(await indexRef.get()), filter)
+        let revoked = 0
+        for (const entry of index.active) {
+          const record = firstDocument(await collection.doc(entry.id).get())
+          if (!record)
+            continue
+          const session = documentToSession(record)
+          if (session.status !== 'active')
+            continue
+          await updateDocument(collection.doc(entry.id), writableDocument(sessionToDocument({
+            ...session,
+            status: 'revoked',
+            revokedAt,
+            terminatedAt: revokedAt,
+            version: session.version + 1,
+          })))
+          revoked++
+        }
+        await setDocument(indexRef, writableDocument(nextIndex(index, [])))
+        return revoked
+      }, this.#transactionRetryTimes)
+    }
+    catch (error) {
+      return asStoreError(error)
+    }
+  }
+
   async listForUser(filter: UserSessionFilter): Promise<AppSession[]> {
     try {
       const result = await this.#database.collection(this.#collectionName)
         .where({ appId: filter.appId, userId: filter.userId, status: 'active' })
         .orderBy('createdAt', 'desc')
-        .limit(100)
+        .limit(32)
         .get()
       return documentList(result).map(documentToSession)
     }
@@ -620,7 +686,9 @@ export class CloudBaseSessionSweeper {
         const session = documentToSession(record)
         candidates.set(session.id, session)
       }
-      const selected = [...candidates.values()].slice(0, limit)
+      const selected = [...candidates.values()]
+        .sort((left, right) => Math.min(left.absoluteExpiresAt, left.idleExpiresAt) - Math.min(right.absoluteExpiresAt, right.idleExpiresAt))
+        .slice(0, limit)
       let expired = 0
       for (const session of selected) {
         if (await this.#store.expire({
@@ -632,6 +700,48 @@ export class CloudBaseSessionSweeper {
         }
       }
       return { scanned: selected.length, expired }
+    }
+    catch (error) {
+      return asStoreError(error)
+    }
+  }
+
+  /** Remove terminal records only after their configured retention period has elapsed. */
+  async sweepTerminal(input: SweepTerminalSessionsInput): Promise<SweepTerminalSessionsResult> {
+    if (!Number.isSafeInteger(input.now) || !Number.isSafeInteger(input.retentionMs) || input.retentionMs < 86_400_000)
+      throw new SessionError('INVALID_INPUT', 'terminal retention must be at least one day')
+    const limit = input.limit ?? 100
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500)
+      throw new SessionError('INVALID_INPUT', 'sweep limit must be between 1 and 500')
+    const before = input.now - input.retentionMs
+    const collection = this.#database.collection(this.#collectionName)
+    try {
+      const [revoked, expired, legacyRevoked, legacyExpired] = await Promise.all([
+        collection.where({ status: 'revoked', terminatedAt: this.#database.command.lte(before) }).orderBy('terminatedAt', 'asc').limit(limit).get(),
+        collection.where({ status: 'expired', terminatedAt: this.#database.command.lte(before) }).orderBy('terminatedAt', 'asc').limit(limit).get(),
+        // Schema v1 has no terminatedAt. Reusing the existing absolute-expiry index is
+        // deliberately conservative: an early revocation may be retained for up to one
+        // extra absolute-TTL window, but is never deleted before the retention period.
+        collection.where({ status: 'revoked', absoluteExpiresAt: this.#database.command.lte(before) }).orderBy('absoluteExpiresAt', 'asc').limit(limit).get(),
+        collection.where({ status: 'expired', absoluteExpiresAt: this.#database.command.lte(before) }).orderBy('absoluteExpiresAt', 'asc').limit(limit).get(),
+      ])
+      const records = new Map<string, AppSession>()
+      for (const record of [...documentList(revoked), ...documentList(expired)]) {
+        const session = documentToSession(record)
+        records.set(session.id, session)
+      }
+      for (const record of [...documentList(legacyRevoked), ...documentList(legacyExpired)]) {
+        if (record.schemaVersion !== 1)
+          continue
+        const session = documentToSession(record)
+        records.set(session.id, session)
+      }
+      const selected = [...records.values()]
+        .sort((left, right) => (left.terminatedAt ?? left.absoluteExpiresAt) - (right.terminatedAt ?? right.absoluteExpiresAt))
+        .slice(0, limit)
+      for (const session of selected)
+        assertCloudBaseResult(await collection.doc(session.id).remove())
+      return { scanned: selected.length, removed: selected.length }
     }
     catch (error) {
       return asStoreError(error)

@@ -83,6 +83,9 @@ export function clearSessionCookie(event: H3Event, config: H3SessionCookieConfig
 
 /** Require an exact allowlisted Origin for a cookie-authenticated unsafe request. */
 export function assertRequestOrigin(event: H3Event, policy: H3OriginPolicy): string {
+  const fetchSite = getHeader(event, 'sec-fetch-site')
+  if (fetchSite === 'cross-site')
+    throw new SessionError('FORBIDDEN', 'cross-site request is not allowed')
   const origin = getHeader(event, 'origin')
   if (!origin || origin === 'null')
     throw new SessionError('FORBIDDEN', 'request Origin is required')

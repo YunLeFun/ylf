@@ -8,6 +8,7 @@
  * （推荐 `getCloudbaseSession`，原生内部完成兑换；或一次性授权码 `getAuthCode` + 服务端兑换）。
  */
 import type { SsoResult, SsoSession } from './protocol'
+import { readSsoReturnUrl } from './protocol'
 
 /** 申请会话的默认作用域 */
 const DEFAULT_SCOPE = ['profile', 'cloudbase:session']
@@ -37,6 +38,8 @@ export interface NativeSsoOptions {
    * 容器若实现了 `getCloudbaseSession` 则用不到它。
    */
   exchangeUrl?: string
+  /** Permit HTTP only for loopback development endpoints. */
+  allowHttpLocalhost?: boolean
 }
 
 function getBridge(): YlfNativeBridge | null {
@@ -52,11 +55,16 @@ export function isInYunleApp(): boolean {
 }
 
 async function exchangeAuthCode(code: string, exchangeUrl: string): Promise<SsoSession | null> {
+  if (code.length < 16 || code.length > 2048 || /\p{Cc}/u.test(code))
+    return null
   try {
     const res = await fetch(exchangeUrl, {
       method: 'POST',
+      credentials: 'omit',
+      redirect: 'error',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ code }),
+      signal: AbortSignal.timeout(10_000),
     })
     if (!res.ok)
       return null
@@ -102,7 +110,12 @@ export async function requestSsoNative(options: NativeSsoOptions = {}): Promise<
       const { code } = await bridge.getAuthCode({ scope })
       if (!code)
         return { ok: false, reason: 'not_authenticated' }
-      const session = await exchangeAuthCode(code, options.exchangeUrl ?? DEFAULT_EXCHANGE_URL)
+      const exchangeUrl = readSsoReturnUrl(options.exchangeUrl ?? DEFAULT_EXCHANGE_URL, {
+        allowHttpLocalhost: options.allowHttpLocalhost === true,
+      })
+      if (!exchangeUrl)
+        return { ok: false, reason: 'not_configured' }
+      const session = await exchangeAuthCode(code, exchangeUrl)
       if (session?.access_token && session?.refresh_token)
         return { ok: true, session }
       return { ok: false, reason: 'error' }
