@@ -15,6 +15,8 @@ export const SSO_RESULT_TYPE = 'ylf:sso-result'
 
 /** 请求 query 字段名，两端共用避免拼错 */
 export const SSO_QUERY_KEYS = {
+  /** Public OAuth-style client identifier. It is not a credential. */
+  clientId: 'client_id',
   mode: 'mode',
   targetOrigin: 'targetOrigin',
   nonce: 'nonce',
@@ -95,6 +97,12 @@ export function readSsoMode(raw: unknown): SsoMode {
   if (value === 'redirect')
     return 'redirect'
   return 'silent'
+}
+
+/** Parse a stable public client identifier. Client IDs are identifiers, never secrets. */
+export function readSsoClientId(raw: unknown): string {
+  const value = firstQueryValue(raw).trim()
+  return /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(value) ? value : ''
 }
 
 /** 解析并归一化 targetOrigin；非法或缺失时返回空串（视为非法请求） */
@@ -202,6 +210,8 @@ export function isAnonymousSession(session: unknown): boolean {
 /** 构造打开桥接页的 URL（query 自动编码）。redirect 模式额外带上 `returnUrl`。 */
 export function buildSsoRequestUrl(input: {
   ssoOrigin: string
+  /** Public client identifier. Optional only during the v2 to v3 migration window. */
+  clientId?: string
   mode: SsoMode
   targetOrigin: string
   nonce: string
@@ -211,11 +221,12 @@ export function buildSsoRequestUrl(input: {
 }): string {
   const options = { allowHttpLocalhost: input.allowHttpLocalhost === true }
   const origin = readSsoTargetOrigin(input.ssoOrigin, options)
+  const clientId = input.clientId === undefined ? '' : readSsoClientId(input.clientId)
   const targetOrigin = readSsoTargetOrigin(input.targetOrigin, options)
   const nonce = readSsoNonce(input.nonce)
   const codeChallenge = readSsoCodeChallenge(input.codeChallenge)
   const returnUrl = input.returnUrl ? readSsoReturnUrl(input.returnUrl, options) : ''
-  if (!origin || !targetOrigin || !nonce || !codeChallenge)
+  if (!origin || !targetOrigin || !nonce || !codeChallenge || (input.clientId !== undefined && !clientId))
     throw new TypeError('invalid secure SSO request')
   if (input.mode === 'redirect' && (!returnUrl || !isSsoRedirectBoundToTarget(targetOrigin, returnUrl)))
     throw new TypeError('redirect return URL must match targetOrigin')
@@ -226,6 +237,8 @@ export function buildSsoRequestUrl(input: {
     [SSO_QUERY_KEYS.codeChallenge]: codeChallenge,
     [SSO_QUERY_KEYS.codeChallengeMethod]: 'S256',
   })
+  if (clientId)
+    params.set(SSO_QUERY_KEYS.clientId, clientId)
   if (returnUrl)
     params.set(SSO_QUERY_KEYS.returnUrl, returnUrl)
   return `${origin}/auth/sso?${params.toString()}`
@@ -292,6 +305,8 @@ export type SsoRedirectResult
 interface SsoRedirectPayload {
   nonce: string
   ok: boolean
+  /** RFC 9207-style authorization-server issuer identifier. */
+  iss?: string
   code?: string
   reason?: SsoFailureReason
 }
@@ -366,10 +381,17 @@ export function hasSsoRedirectResult(hash: string): boolean {
 export function encodeSsoRedirectResult(payload: {
   nonce: string
   ok: boolean
+  issuer?: string
   code?: string
   reason?: SsoFailureReason
 }): string {
   const compact: SsoRedirectPayload = { nonce: payload.nonce, ok: payload.ok }
+  if (payload.issuer) {
+    const issuer = readSsoTargetOrigin(payload.issuer)
+    if (!issuer)
+      throw new TypeError('invalid SSO issuer')
+    compact.iss = issuer
+  }
   if (payload.code)
     compact.code = payload.code
   if (payload.reason)
@@ -386,7 +408,7 @@ export function encodeSsoRedirectResult(payload: {
  *
  * 安全关键：nonce 必须等于本次发起重定向时存下的值（防 CSRF / 结果注入）。
  */
-export function parseSsoRedirectResult(input: { hash: string, expectedNonce: string }): SsoRedirectResult | null {
+export function parseSsoRedirectResult(input: { hash: string, expectedNonce: string, expectedIssuer?: string }): SsoRedirectResult | null {
   const raw = readHashParam(input.hash, SSO_REDIRECT_HASH_KEY)
   if (!raw || !input.expectedNonce)
     return null
@@ -400,6 +422,8 @@ export function parseSsoRedirectResult(input: { hash: string, expectedNonce: str
     return null
   }
   if (!payload || payload.nonce !== input.expectedNonce)
+    return null
+  if (input.expectedIssuer && payload.iss !== input.expectedIssuer)
     return null
 
   if (payload.ok === true && typeof payload.code === 'string' && /^[\w-]{43}$/.test(payload.code))

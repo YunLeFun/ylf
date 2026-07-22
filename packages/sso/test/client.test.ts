@@ -10,6 +10,7 @@ const session = { access_token: 'at', refresh_token: 'rt' }
 const g = globalThis as unknown as { window?: unknown }
 const NONCE_KEY = 'ylf:sso:redirect-nonce'
 const PKCE_KEY = 'ylf:sso:redirect-pkce-verifier'
+const ISSUER_KEY = 'ylf:sso:redirect-issuer'
 const VERIFIER = 'v'.repeat(64)
 
 function mockWindow(init: { hash?: string, search?: string, store?: Record<string, string> } = {}) {
@@ -122,7 +123,7 @@ describe('adoptSsoCode', () => {
     const adopted = await adoptSsoCode(
       { signInWithCustomTicket },
       'c'.repeat(43),
-      { nonce: 'n'.repeat(32), codeVerifier: VERIFIER, fetch: fetchImpl },
+      { clientId: 'wenta-web', nonce: 'n'.repeat(32), codeVerifier: VERIFIER, fetch: fetchImpl },
     )
     expect(adopted).toBe(true)
     expect(fetchImpl).toHaveBeenCalledTimes(1)
@@ -130,7 +131,7 @@ describe('adoptSsoCode', () => {
     expect(signInWithCustomTicket).toHaveResolvedWith('cloudbase-ticket')
     const request = fetchImpl.mock.calls[0]?.[1]
     expect(String(request?.body)).not.toContain('refresh_token')
-    expect(JSON.parse(String(request?.body))).toMatchObject({ codeVerifier: VERIFIER })
+    expect(JSON.parse(String(request?.body))).toMatchObject({ clientId: 'wenta-web', codeVerifier: VERIFIER })
   })
 
   it('rejects exchange responses that try to return a session or refresh token', async () => {
@@ -151,16 +152,18 @@ describe('adoptSsoCode', () => {
 describe('startSsoRedirect', () => {
   it('stores a nonce and PKCE verifier, then navigates top-level to the redirect bridge URL', async () => {
     const { assign, store } = mockWindow()
-    await startSsoRedirect({ ssoOrigin: 'https://www.yunle.fun' })
+    await startSsoRedirect({ clientId: 'wenta-web', ssoOrigin: 'https://www.yunle.fun' })
     expect(assign).toHaveBeenCalledTimes(1)
     const url = new URL(assign.mock.calls[0][0] as string)
     expect(`${url.origin}${url.pathname}`).toBe('https://www.yunle.fun/auth/sso')
     expect(url.searchParams.get('mode')).toBe('redirect')
+    expect(url.searchParams.get('client_id')).toBe('wenta-web')
     expect(url.searchParams.get('returnUrl')).toBe('https://wenta.example/deck')
     const nonce = url.searchParams.get('nonce') ?? ''
     expect(nonce).not.toBe('')
     expect(store.get(NONCE_KEY)).toBe(nonce) // nonce persisted for return-trip validation
     expect(store.get(PKCE_KEY)).toMatch(/^[\w.~-]{43,128}$/)
+    expect(store.get(ISSUER_KEY)).toBe('https://www.yunle.fun')
     expect(url.searchParams.get('codeChallenge')).toMatch(/^[\w-]{43}$/)
     expect(url.searchParams.get('codeChallengeMethod')).toBe('S256')
   })
@@ -168,12 +171,13 @@ describe('startSsoRedirect', () => {
 
 describe('consumeSsoRedirect', () => {
   it('parses a matching result, then clears the nonce and strips the hash', () => {
-    const enc = encodeSsoRedirectResult({ nonce: 'n1', ok: true, code: 'c'.repeat(43) })
-    const { replaceState, store } = mockWindow({ hash: `#${SSO_REDIRECT_HASH_KEY}=${enc}`, store: { [NONCE_KEY]: 'n1', [PKCE_KEY]: VERIFIER } })
+    const enc = encodeSsoRedirectResult({ nonce: 'n1', issuer: 'https://www.yunle.fun', ok: true, code: 'c'.repeat(43) })
+    const { replaceState, store } = mockWindow({ hash: `#${SSO_REDIRECT_HASH_KEY}=${enc}`, store: { [NONCE_KEY]: 'n1', [PKCE_KEY]: VERIFIER, [ISSUER_KEY]: 'https://www.yunle.fun' } })
     expect(consumeSsoRedirect()).toEqual({ ok: true, code: 'c'.repeat(43), nonce: 'n1', codeVerifier: VERIFIER })
     expect(replaceState).toHaveBeenCalled()
     expect(store.has(NONCE_KEY)).toBe(false)
     expect(store.has(PKCE_KEY)).toBe(false)
+    expect(store.has(ISSUER_KEY)).toBe(false)
   })
 
   it('returns a v2 authorization code with its validated nonce', () => {

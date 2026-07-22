@@ -24,6 +24,7 @@ export {
   isSsoPkceVerifier,
   isSsoRedirectBoundToTarget,
   parseSsoRedirectResult,
+  readSsoClientId,
   readSsoCodeChallenge,
   readSsoCodeChallengeMethod,
   readSsoMode,

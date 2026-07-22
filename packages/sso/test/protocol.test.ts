@@ -8,6 +8,7 @@ import {
   isSsoRedirectBoundToTarget,
   parseSsoRedirectResult,
   parseSsoResultMessage,
+  readSsoClientId,
   readSsoCodeChallenge,
   readSsoCodeChallengeMethod,
   readSsoMode,
@@ -37,6 +38,13 @@ describe('provider-side request parsing', () => {
     expect(readSsoMode(['interactive'])).toBe('interactive')
     expect(readSsoMode('silent')).toBe('silent')
     expect(readSsoMode(undefined)).toBe('silent')
+  })
+
+  it('accepts only stable public client identifiers', () => {
+    expect(readSsoClientId('cms-web')).toBe('cms-web')
+    expect(readSsoClientId(['admin-web'])).toBe('admin-web')
+    expect(readSsoClientId('CMS Web')).toBe('')
+    expect(readSsoClientId('a')).toBe('')
   })
 
   it('readSsoTargetOrigin normalizes origin and rejects junk', () => {
@@ -76,6 +84,7 @@ describe('buildSsoRequestUrl', () => {
   it('builds an encoded bridge URL and strips trailing slash', () => {
     const url = buildSsoRequestUrl({
       ssoOrigin: 'https://www.yunle.fun/',
+      clientId: 'apps-web',
       mode: 'silent',
       targetOrigin: 'https://apps.yunle.fun',
       nonce: NONCE,
@@ -84,11 +93,24 @@ describe('buildSsoRequestUrl', () => {
     const parsed = new URL(url)
     expect(parsed.origin).toBe(ORIGIN)
     expect(parsed.pathname).toBe('/auth/sso')
+    expect(parsed.searchParams.get('client_id')).toBe('apps-web')
     expect(parsed.searchParams.get('mode')).toBe('silent')
     expect(parsed.searchParams.get('targetOrigin')).toBe('https://apps.yunle.fun')
     expect(parsed.searchParams.get('nonce')).toBe(NONCE)
     expect(parsed.searchParams.get('codeChallenge')).toBe(CODE_CHALLENGE)
     expect(parsed.searchParams.get('codeChallengeMethod')).toBe('S256')
+  })
+
+  it('rejects an explicitly invalid client identifier', () => {
+    expect(() => buildSsoRequestUrl({
+      ssoOrigin: ORIGIN,
+      clientId: 'CMS Web',
+      mode: 'redirect',
+      targetOrigin: 'https://apps.yunle.fun',
+      nonce: NONCE,
+      codeChallenge: CODE_CHALLENGE,
+      returnUrl: 'https://apps.yunle.fun/',
+    })).toThrow('invalid secure SSO request')
   })
 })
 
@@ -210,6 +232,13 @@ describe('redirect result encode/parse', () => {
     const decoded = parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: NONCE })
     expect(decoded).toEqual({ ok: true, code, nonce: NONCE })
     expect(JSON.stringify(decoded)).not.toContain('refresh_token')
+  })
+
+  it('binds a redirect response to the expected authorization-server issuer', () => {
+    const code = 'c'.repeat(43)
+    const enc = encodeSsoRedirectResult({ nonce: NONCE, issuer: ORIGIN, ok: true, code })
+    expect(parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: NONCE, expectedIssuer: ORIGIN })).toEqual({ ok: true, code, nonce: NONCE })
+    expect(parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: NONCE, expectedIssuer: 'https://sso.dev.yunle.fun' })).toBeNull()
   })
 
   it('round-trips a failure result with its reason', () => {
