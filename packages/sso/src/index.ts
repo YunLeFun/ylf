@@ -1,5 +1,3 @@
-// 子应用直接 `import { startSsoRedirect } from '@yunlefun/sso'` 使用授权码 + PKCE 流程。
-// Provider 只需协议层；旧 session/ticket 采用能力只能从 `@yunlefun/sso/legacy` 显式导入。
 export {
   adoptSsoCode,
   consumeSsoRedirect,
@@ -10,6 +8,7 @@ export {
 export type {
   RedirectSsoOptions,
   SsoAdoptionAuth,
+  SsoAuthorizationResult,
   SsoCodeExchangeOptions,
   SsoFetch,
 } from './client'
@@ -22,20 +21,18 @@ export {
   isAnonymousSession,
   isSecureSsoUrl,
   isSsoPkceVerifier,
-  isSsoRedirectBoundToTarget,
   parseSsoRedirectResult,
+  readSsoClientId,
   readSsoCodeChallenge,
   readSsoCodeChallengeMethod,
-  readSsoMode,
   readSsoNonce,
-  readSsoReturnUrl,
-  readSsoTargetOrigin,
+  readSsoRedirectUri,
+  readSsoScope,
   SSO_QUERY_KEYS,
   SSO_REDIRECT_HASH_KEY,
 } from './protocol'
 export type {
   SsoFailureReason,
-  SsoMode,
   SsoRedirectResult,
   SsoUrlSecurityOptions,
 } from './protocol'
