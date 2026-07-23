@@ -1,38 +1,60 @@
 import type { SsoFetch } from '../src/client'
+import { readFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { adoptSsoCode, adoptSsoResult, adoptSsoTicket, consumeSsoRedirect, startSsoRedirect } from '../src/client'
+import {
+  adoptSsoCode,
+  consumeSsoRedirect,
+  startSsoRedirect,
+} from '../src/client'
 import * as publicApi from '../src/index'
-import * as legacyApi from '../src/legacy'
-import { encodeSsoRedirectResult, SSO_REDIRECT_HASH_KEY } from '../src/protocol'
-
-const session = { access_token: 'at', refresh_token: 'rt' }
+import {
+  encodeSsoRedirectResult,
+  SSO_REDIRECT_HASH_KEY,
+} from '../src/protocol'
 
 const g = globalThis as unknown as { window?: unknown }
-const NONCE_KEY = 'ylf:sso:redirect-nonce'
-const PKCE_KEY = 'ylf:sso:redirect-pkce-verifier'
-const ISSUER_KEY = 'ylf:sso:redirect-issuer'
-const VERIFIER = 'v'.repeat(64)
+const TRANSACTION_KEY = 'ylf:sso:v3:transaction'
+const VERIFIER = 'v'.repeat(43)
 
-function mockWindow(init: { hash?: string, search?: string, store?: Record<string, string> } = {}) {
+function mockWindow(init: {
+  hash?: string
+  origin?: string
+  pathname?: string
+  search?: string
+  store?: Record<string, string>
+} = {}) {
   const store = new Map<string, string>(Object.entries(init.store ?? {}))
   const assign = vi.fn()
   const replaceState = vi.fn()
   g.window = {
     location: {
-      origin: 'https://wenta.example',
-      pathname: '/deck',
+      origin: init.origin ?? 'https://home.yunle.fun',
+      pathname: init.pathname ?? '/',
       search: init.search ?? '',
       hash: init.hash ?? '',
       assign,
     },
     sessionStorage: {
-      getItem: (k: string) => (store.has(k) ? store.get(k) ?? null : null),
-      setItem: (k: string, v: string) => void store.set(k, v),
-      removeItem: (k: string) => void store.delete(k),
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+      removeItem: (key: string) => void store.delete(key),
     },
     history: { state: null, replaceState },
   }
   return { assign, replaceState, store }
+}
+
+function transaction(overrides: Record<string, unknown> = {}) {
+  return JSON.stringify({
+    issuer: 'https://www.yunle.fun',
+    clientId: 'home-web',
+    scope: ['identity:bootstrap'],
+    redirectUri: 'https://home.yunle.fun/',
+    nonce: 'n'.repeat(43),
+    codeVerifier: VERIFIER,
+    createdAt: Date.now(),
+    ...overrides,
+  })
 }
 
 afterEach(() => {
@@ -40,170 +62,172 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('adoptSsoResult', () => {
-  it('prefers the custom-login ticket when the auth supports it (independent session)', async () => {
-    const setSession = vi.fn(async () => undefined)
-    const signInWithCustomTicket = vi.fn(async (_getTicket: () => Promise<string>) => undefined)
-    const ok = await adoptSsoResult({ setSession, signInWithCustomTicket }, { ok: true, session, ticket: 'tkt-1' })
-    expect(ok).toBe(true)
-    // v2 API: called with a ticket-provider function, not the raw string.
-    expect(signInWithCustomTicket).toHaveBeenCalledTimes(1)
-    const getTicket = signInWithCustomTicket.mock.calls[0]?.[0] as (() => Promise<string>) | undefined
-    expect(typeof getTicket).toBe('function')
-    expect(await getTicket?.()).toBe('tkt-1')
-    expect(setSession).not.toHaveBeenCalled()
-  })
-
-  it('falls back to setSession when no ticket is present', async () => {
-    const setSession = vi.fn(async () => undefined)
-    const signInWithCustomTicket = vi.fn(async (_getTicket: () => Promise<string>) => undefined)
-    const ok = await adoptSsoResult({ setSession, signInWithCustomTicket }, { ok: true, session })
-    expect(ok).toBe(true)
-    expect(signInWithCustomTicket).not.toHaveBeenCalled()
-    expect(setSession).toHaveBeenCalledWith({ access_token: 'at', refresh_token: 'rt' })
-  })
-
-  it('falls back to setSession when the auth cannot use tickets (older SDK)', async () => {
-    const setSession = vi.fn(async () => undefined)
-    const ok = await adoptSsoResult({ setSession }, { ok: true, session, ticket: 'tkt-1' })
-    expect(ok).toBe(true)
-    expect(setSession).toHaveBeenCalledWith({ access_token: 'at', refresh_token: 'rt' })
-  })
-
-  it('returns false when the fallback session lacks the required tokens', async () => {
-    const setSession = vi.fn(async () => undefined)
-    const ok = await adoptSsoResult({ setSession }, { ok: true, session: { access_token: 'at' } })
-    expect(ok).toBe(false)
-    expect(setSession).not.toHaveBeenCalled()
-  })
-})
-
-describe('adoptSsoTicket', () => {
-  it('signs in with the one-time ticket when supported', async () => {
-    const signInWithCustomTicket = vi.fn(async (_getTicket: () => Promise<string>) => undefined)
-    expect(await adoptSsoTicket({ setSession: vi.fn(), signInWithCustomTicket }, 'tkt-1')).toBe(true)
-    // v2 API: called with a ticket-provider function, not the raw string.
-    const getTicket = signInWithCustomTicket.mock.calls[0]?.[0] as (() => Promise<string>) | undefined
-    expect(typeof getTicket).toBe('function')
-    expect(await getTicket?.()).toBe('tkt-1')
-  })
-
-  it('returns false without a ticket or without ticket support', async () => {
-    const signInWithCustomTicket = vi.fn(async () => undefined)
-    expect(await adoptSsoTicket({ setSession: vi.fn(), signInWithCustomTicket }, '')).toBe(false)
-    expect(await adoptSsoTicket({ setSession: vi.fn() }, 'tkt-1')).toBe(false)
-  })
-})
-
 describe('public API boundary', () => {
-  it('requires an explicit legacy subpath for direct session or ticket adoption', () => {
-    expect('adoptSession' in publicApi).toBe(false)
-    expect('adoptSsoResult' in publicApi).toBe(false)
-    expect('adoptSsoTicket' in publicApi).toBe(false)
-    expect('requestSso' in publicApi).toBe(false)
-    expect('signInWithSso' in publicApi).toBe(false)
-    expect('requestSsoNative' in publicApi).toBe(false)
-    expect('parseSsoResultMessage' in publicApi).toBe(false)
-    expect(legacyApi.adoptSession).toBeTypeOf('function')
-    expect(legacyApi.adoptSsoResult).toBeTypeOf('function')
-    expect(legacyApi.adoptSsoTicket).toBeTypeOf('function')
-    expect(legacyApi.requestSso).toBeTypeOf('function')
-    expect(legacyApi.signInWithSso).toBeTypeOf('function')
-    expect(legacyApi.requestSsoNative).toBeTypeOf('function')
+  it('exposes only the redirect-code consumer and removes every legacy subpath', async () => {
+    for (const removed of [
+      'adoptSession',
+      'adoptSsoResult',
+      'adoptSsoTicket',
+      'requestSso',
+      'signInWithSso',
+      'requestSsoNative',
+      'parseSsoResultMessage',
+    ]) {
+      expect(removed in publicApi).toBe(false)
+    }
+
+    const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+    expect(manifest.exports).not.toHaveProperty('./legacy')
+  })
+})
+
+describe('startSsoRedirect', () => {
+  it('requires clientId and scope, persists one bound transaction, then navigates top-level', async () => {
+    const { assign, store } = mockWindow()
+    await startSsoRedirect({
+      clientId: 'home-web',
+      scope: ['identity:bootstrap'],
+      redirectUri: 'https://home.yunle.fun/',
+      ssoOrigin: 'https://www.yunle.fun',
+    })
+
+    expect(assign).toHaveBeenCalledTimes(1)
+    const url = new URL(assign.mock.calls[0]?.[0] as string)
+    expect(`${url.origin}${url.pathname}`).toBe('https://www.yunle.fun/auth/sso')
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({
+      client_id: 'home-web',
+      redirect_uri: 'https://home.yunle.fun/',
+      scope: 'identity:bootstrap',
+      code_challenge_method: 'S256',
+    })
+    expect(url.searchParams.get('nonce')).toMatch(/^[\w-]{43}$/)
+    expect(url.searchParams.get('code_challenge')).toMatch(/^[\w-]{43}$/)
+
+    const saved = JSON.parse(store.get(TRANSACTION_KEY) ?? '{}')
+    expect(saved).toMatchObject({
+      issuer: 'https://www.yunle.fun',
+      clientId: 'home-web',
+      scope: ['identity:bootstrap'],
+      redirectUri: 'https://home.yunle.fun/',
+      nonce: url.searchParams.get('nonce'),
+    })
+    expect(saved.codeVerifier).toMatch(/^[\w.~-]{43,128}$/)
+  })
+
+  it('fails closed when transaction storage is unavailable', async () => {
+    const { assign } = mockWindow()
+    const windowValue = g.window as { sessionStorage: { setItem: () => void } }
+    windowValue.sessionStorage.setItem = () => {
+      throw new Error('storage disabled')
+    }
+
+    await expect(startSsoRedirect({
+      clientId: 'home-web',
+      scope: ['identity:bootstrap'],
+      redirectUri: 'https://home.yunle.fun/',
+    })).rejects.toThrow('transaction')
+    expect(assign).not.toHaveBeenCalled()
+  })
+})
+
+describe('consumeSsoRedirect', () => {
+  it('returns a complete immutable exchange binding and consumes stored state', () => {
+    const encoded = encodeSsoRedirectResult({
+      nonce: 'n'.repeat(43),
+      issuer: 'https://www.yunle.fun',
+      ok: true,
+      code: 'c'.repeat(43),
+    })
+    const { replaceState, store } = mockWindow({
+      hash: `#${SSO_REDIRECT_HASH_KEY}=${encoded}`,
+      store: { [TRANSACTION_KEY]: transaction() },
+    })
+
+    expect(consumeSsoRedirect()).toEqual({
+      ok: true,
+      code: 'c'.repeat(43),
+      issuer: 'https://www.yunle.fun',
+      clientId: 'home-web',
+      scope: ['identity:bootstrap'],
+      redirectUri: 'https://home.yunle.fun/',
+      nonce: 'n'.repeat(43),
+      codeVerifier: VERIFIER,
+    })
+    expect(store.has(TRANSACTION_KEY)).toBe(false)
+    expect(replaceState).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects issuer or nonce injection and still scrubs recognized callbacks', () => {
+    const encoded = encodeSsoRedirectResult({
+      nonce: 'n'.repeat(43),
+      issuer: 'https://evil.example',
+      ok: true,
+      code: 'c'.repeat(43),
+    })
+    const { replaceState, store } = mockWindow({
+      hash: `#${SSO_REDIRECT_HASH_KEY}=${encoded}`,
+      store: { [TRANSACTION_KEY]: transaction() },
+    })
+    expect(consumeSsoRedirect()).toBeNull()
+    expect(store.has(TRANSACTION_KEY)).toBe(false)
+    expect(replaceState).toHaveBeenCalledTimes(1)
   })
 })
 
 describe('adoptSsoCode', () => {
-  it('redeems the bound code once and passes only the returned ticket to the official SDK', async () => {
+  it('redeems every stored binding and passes only the transient ticket to CloudBase', async () => {
     const signInWithCustomTicket = vi.fn(async (getTicket: () => Promise<string>) => getTicket())
-    const fetchImpl = vi.fn<SsoFetch>(async () => new Response(JSON.stringify({ ok: true, ticket: 'cloudbase-ticket' }), {
+    const fetchImpl = vi.fn<SsoFetch>(async () => new Response(JSON.stringify({
+      ok: true,
+      ticket: 'cloudbase-ticket',
+    }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     }))
-    const adopted = await adoptSsoCode(
-      { signInWithCustomTicket },
-      'c'.repeat(43),
-      { clientId: 'wenta-web', nonce: 'n'.repeat(32), codeVerifier: VERIFIER, fetch: fetchImpl },
-    )
+
+    const adopted = await adoptSsoCode({ signInWithCustomTicket }, {
+      ok: true,
+      code: 'c'.repeat(43),
+      issuer: 'https://www.yunle.fun',
+      clientId: 'home-web',
+      scope: ['identity:bootstrap'],
+      redirectUri: 'https://home.yunle.fun/',
+      nonce: 'n'.repeat(43),
+      codeVerifier: VERIFIER,
+    }, { fetch: fetchImpl })
+
     expect(adopted).toBe(true)
-    expect(fetchImpl).toHaveBeenCalledTimes(1)
-    expect(fetchImpl.mock.calls[0]?.[0]).toBe('https://api.yunle.fun/sso-ticket')
     expect(signInWithCustomTicket).toHaveResolvedWith('cloudbase-ticket')
     const request = fetchImpl.mock.calls[0]?.[1]
+    expect(JSON.parse(String(request?.body))).toEqual({
+      action: 'exchangeSsoCode',
+      clientId: 'home-web',
+      redirectUri: 'https://home.yunle.fun/',
+      scope: 'identity:bootstrap',
+      code: 'c'.repeat(43),
+      nonce: 'n'.repeat(43),
+      codeVerifier: VERIFIER,
+    })
     expect(String(request?.body)).not.toContain('refresh_token')
-    expect(JSON.parse(String(request?.body))).toMatchObject({ clientId: 'wenta-web', codeVerifier: VERIFIER })
   })
 
-  it('rejects exchange responses that try to return a session or refresh token', async () => {
+  it('rejects responses that contain session credentials', async () => {
     const signInWithCustomTicket = vi.fn(async (getTicket: () => Promise<string>) => getTicket())
     const fetchImpl = vi.fn<SsoFetch>(async () => new Response(JSON.stringify({
       ok: true,
       ticket: 'cloudbase-ticket',
       refresh_token: 'must-not-cross',
     }), { status: 200 }))
-    await expect(adoptSsoCode(
-      { signInWithCustomTicket },
-      'c'.repeat(43),
-      { nonce: 'n'.repeat(32), codeVerifier: VERIFIER, fetch: fetchImpl },
-    )).rejects.toThrow('exchange failed')
-  })
-})
 
-describe('startSsoRedirect', () => {
-  it('stores a nonce and PKCE verifier, then navigates top-level to the redirect bridge URL', async () => {
-    const { assign, store } = mockWindow()
-    await startSsoRedirect({ clientId: 'wenta-web', ssoOrigin: 'https://www.yunle.fun' })
-    expect(assign).toHaveBeenCalledTimes(1)
-    const url = new URL(assign.mock.calls[0][0] as string)
-    expect(`${url.origin}${url.pathname}`).toBe('https://www.yunle.fun/auth/sso')
-    expect(url.searchParams.get('mode')).toBe('redirect')
-    expect(url.searchParams.get('client_id')).toBe('wenta-web')
-    expect(url.searchParams.get('returnUrl')).toBe('https://wenta.example/deck')
-    const nonce = url.searchParams.get('nonce') ?? ''
-    expect(nonce).not.toBe('')
-    expect(store.get(NONCE_KEY)).toBe(nonce) // nonce persisted for return-trip validation
-    expect(store.get(PKCE_KEY)).toMatch(/^[\w.~-]{43,128}$/)
-    expect(store.get(ISSUER_KEY)).toBe('https://www.yunle.fun')
-    expect(url.searchParams.get('codeChallenge')).toMatch(/^[\w-]{43}$/)
-    expect(url.searchParams.get('codeChallengeMethod')).toBe('S256')
-  })
-})
-
-describe('consumeSsoRedirect', () => {
-  it('parses a matching result, then clears the nonce and strips the hash', () => {
-    const enc = encodeSsoRedirectResult({ nonce: 'n1', issuer: 'https://www.yunle.fun', ok: true, code: 'c'.repeat(43) })
-    const { replaceState, store } = mockWindow({ hash: `#${SSO_REDIRECT_HASH_KEY}=${enc}`, store: { [NONCE_KEY]: 'n1', [PKCE_KEY]: VERIFIER, [ISSUER_KEY]: 'https://www.yunle.fun' } })
-    expect(consumeSsoRedirect()).toEqual({ ok: true, code: 'c'.repeat(43), nonce: 'n1', codeVerifier: VERIFIER })
-    expect(replaceState).toHaveBeenCalled()
-    expect(store.has(NONCE_KEY)).toBe(false)
-    expect(store.has(PKCE_KEY)).toBe(false)
-    expect(store.has(ISSUER_KEY)).toBe(false)
-  })
-
-  it('returns a v2 authorization code with its validated nonce', () => {
-    const enc = encodeSsoRedirectResult({ nonce: 'n'.repeat(32), ok: true, code: 'c'.repeat(43) })
-    mockWindow({
-      hash: `#${SSO_REDIRECT_HASH_KEY}=${enc}`,
-      store: { [NONCE_KEY]: 'n'.repeat(32), [PKCE_KEY]: VERIFIER },
-    })
-    expect(consumeSsoRedirect()).toEqual({ ok: true, code: 'c'.repeat(43), nonce: 'n'.repeat(32), codeVerifier: VERIFIER })
-  })
-
-  it('returns null when the URL has no redirect result', () => {
-    mockWindow({ hash: '#room=abc' })
-    expect(consumeSsoRedirect()).toBeNull()
-  })
-
-  it('returns null on a nonce mismatch but still clears the stored nonce', () => {
-    const enc = encodeSsoRedirectResult({ nonce: 'n1', ok: true, code: 'c'.repeat(43) })
-    const { store } = mockWindow({ hash: `#${SSO_REDIRECT_HASH_KEY}=${enc}`, store: { [NONCE_KEY]: 'WRONG' } })
-    expect(consumeSsoRedirect()).toBeNull()
-    expect(store.has(NONCE_KEY)).toBe(false)
-  })
-
-  it('scrubs a recognized malformed callback fragment', () => {
-    const { replaceState } = mockWindow({ hash: `#${SSO_REDIRECT_HASH_KEY}=%E0%A4%A` })
-    expect(consumeSsoRedirect()).toBeNull()
-    expect(replaceState).toHaveBeenCalledTimes(1)
+    await expect(adoptSsoCode({ signInWithCustomTicket }, {
+      ok: true,
+      code: 'c'.repeat(43),
+      issuer: 'https://www.yunle.fun',
+      clientId: 'home-web',
+      scope: ['identity:bootstrap'],
+      redirectUri: 'https://home.yunle.fun/',
+      nonce: 'n'.repeat(43),
+      codeVerifier: VERIFIER,
+    }, { fetch: fetchImpl })).rejects.toThrow('exchange failed')
   })
 })

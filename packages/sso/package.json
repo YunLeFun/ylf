@@ -26,11 +26,6 @@
       "types": "./dist/protocol.d.ts",
       "import": "./dist/protocol.mjs",
       "require": "./dist/protocol.cjs"
-    },
-    "./legacy": {
-      "types": "./dist/legacy.d.ts",
-      "import": "./dist/legacy.mjs",
-      "require": "./dist/legacy.cjs"
     }
   },
   "main": "./dist/index.mjs",

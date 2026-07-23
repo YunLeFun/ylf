@@ -5,268 +5,135 @@ import {
   encodeSsoRedirectResult,
   firstQueryValue,
   isAnonymousSession,
-  isSsoRedirectBoundToTarget,
   parseSsoRedirectResult,
-  parseSsoResultMessage,
   readSsoClientId,
   readSsoCodeChallenge,
   readSsoCodeChallengeMethod,
-  readSsoMode,
   readSsoNonce,
-  readSsoReturnUrl,
-  readSsoTargetOrigin,
+  readSsoRedirectUri,
+  readSsoScope,
   SSO_REDIRECT_HASH_KEY,
-  SSO_RESULT_TYPE,
 } from '../src/protocol'
 
-const ORIGIN = 'https://www.yunle.fun'
-const NONCE = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6'
-const CODE_CHALLENGE = 'c'.repeat(43)
+const ISSUER = 'https://www.yunle.fun'
+const NONCE = 'n'.repeat(43)
+const CHALLENGE = 'c'.repeat(43)
 
-describe('firstQueryValue', () => {
-  it('normalizes string / array / missing', () => {
-    expect(firstQueryValue('abc')).toBe('abc')
+describe('sso v3 request protocol', () => {
+  it('parses only explicit client, scope, redirect URI, nonce, and S256 PKCE values', async () => {
     expect(firstQueryValue(['first', 'second'])).toBe('first')
-    expect(firstQueryValue(undefined)).toBe('')
-    expect(firstQueryValue([])).toBe('')
-  })
-})
-
-describe('provider-side request parsing', () => {
-  it('readSsoMode only returns interactive for the exact value', () => {
-    expect(readSsoMode('interactive')).toBe('interactive')
-    expect(readSsoMode(['interactive'])).toBe('interactive')
-    expect(readSsoMode('silent')).toBe('silent')
-    expect(readSsoMode(undefined)).toBe('silent')
-  })
-
-  it('accepts only stable public client identifiers', () => {
     expect(readSsoClientId('cms-web')).toBe('cms-web')
-    expect(readSsoClientId(['admin-web'])).toBe('admin-web')
     expect(readSsoClientId('CMS Web')).toBe('')
-    expect(readSsoClientId('a')).toBe('')
-  })
-
-  it('readSsoTargetOrigin normalizes origin and rejects junk', () => {
-    expect(readSsoTargetOrigin('https://apps.yunle.fun/x?y=1')).toBe('https://apps.yunle.fun')
-    expect(readSsoTargetOrigin('http://localhost:2333')).toBe('')
-    expect(readSsoTargetOrigin('http://localhost:2333', { allowHttpLocalhost: true })).toBe('http://localhost:2333')
-    expect(readSsoTargetOrigin('http://drive.yunle.fun')).toBe('')
-    expect(readSsoTargetOrigin('https://user:password@apps.yunle.fun')).toBe('')
-    expect(readSsoTargetOrigin('not-a-url')).toBe('')
-    expect(readSsoTargetOrigin(undefined)).toBe('')
-  })
-
-  it('readSsoNonce trims', () => {
-    expect(readSsoNonce(`  ${NONCE}  `)).toBe(NONCE)
-    expect(readSsoNonce('too-short')).toBe('')
-    expect(readSsoNonce(undefined)).toBe('')
-  })
-
-  it('requires PKCE S256 and derives the RFC 7636 challenge', async () => {
-    expect(readSsoCodeChallenge(CODE_CHALLENGE)).toBe(CODE_CHALLENGE)
-    expect(readSsoCodeChallenge('short')).toBe('')
+    expect(readSsoScope('identity:bootstrap')).toEqual(['identity:bootstrap'])
+    expect(readSsoScope('identity:bootstrap identity:bootstrap')).toEqual([])
+    expect(readSsoScope(undefined)).toEqual([])
+    expect(readSsoRedirectUri('https://cms.yunle.fun/')).toBe('https://cms.yunle.fun/')
+    expect(readSsoRedirectUri('https://cms.yunle.fun/#fragment')).toBe('')
+    expect(readSsoRedirectUri('http://localhost:3000/')).toBe('')
+    expect(readSsoNonce(NONCE)).toBe(NONCE)
+    expect(readSsoCodeChallenge(CHALLENGE)).toBe(CHALLENGE)
     expect(readSsoCodeChallengeMethod('S256')).toBe('S256')
     expect(readSsoCodeChallengeMethod('plain')).toBe('')
     expect(await deriveSsoPkceChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk')).toBe('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM')
   })
 
-  it('isAnonymousSession only flags anonymous users', () => {
-    expect(isAnonymousSession({ user: { is_anonymous: true } })).toBe(true)
-    expect(isAnonymousSession({ user: { is_anonymous: false } })).toBe(false)
-    expect(isAnonymousSession({ user: {} })).toBe(false)
-    expect(isAnonymousSession(null)).toBe(false)
-    expect(isAnonymousSession('nope')).toBe(false)
-  })
-})
-
-describe('buildSsoRequestUrl', () => {
-  it('builds an encoded bridge URL and strips trailing slash', () => {
-    const url = buildSsoRequestUrl({
-      ssoOrigin: 'https://www.yunle.fun/',
-      clientId: 'apps-web',
-      mode: 'silent',
-      targetOrigin: 'https://apps.yunle.fun',
+  it('builds only the redirect + PKCE request surface with OAuth-style names', () => {
+    const url = new URL(buildSsoRequestUrl({
+      ssoOrigin: ISSUER,
+      clientId: 'cms-web',
+      scope: ['identity:bootstrap'],
+      redirectUri: 'https://cms.yunle.fun/',
       nonce: NONCE,
-      codeChallenge: CODE_CHALLENGE,
+      codeChallenge: CHALLENGE,
+    }))
+
+    expect(`${url.origin}${url.pathname}`).toBe('https://www.yunle.fun/auth/sso')
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      client_id: 'cms-web',
+      redirect_uri: 'https://cms.yunle.fun/',
+      scope: 'identity:bootstrap',
+      nonce: NONCE,
+      code_challenge: CHALLENGE,
+      code_challenge_method: 'S256',
     })
-    const parsed = new URL(url)
-    expect(parsed.origin).toBe(ORIGIN)
-    expect(parsed.pathname).toBe('/auth/sso')
-    expect(parsed.searchParams.get('client_id')).toBe('apps-web')
-    expect(parsed.searchParams.get('mode')).toBe('silent')
-    expect(parsed.searchParams.get('targetOrigin')).toBe('https://apps.yunle.fun')
-    expect(parsed.searchParams.get('nonce')).toBe(NONCE)
-    expect(parsed.searchParams.get('codeChallenge')).toBe(CODE_CHALLENGE)
-    expect(parsed.searchParams.get('codeChallengeMethod')).toBe('S256')
+    expect(url.searchParams.has('mode')).toBe(false)
+    expect(url.searchParams.has('targetOrigin')).toBe(false)
   })
 
-  it('rejects an explicitly invalid client identifier', () => {
-    expect(() => buildSsoRequestUrl({
-      ssoOrigin: ORIGIN,
-      clientId: 'CMS Web',
-      mode: 'redirect',
-      targetOrigin: 'https://apps.yunle.fun',
+  it('rejects omitted scope and insecure or malformed requests', () => {
+    const base = {
+      ssoOrigin: ISSUER,
+      clientId: 'cms-web',
+      scope: ['identity:bootstrap'],
+      redirectUri: 'https://cms.yunle.fun/',
       nonce: NONCE,
-      codeChallenge: CODE_CHALLENGE,
-      returnUrl: 'https://apps.yunle.fun/',
-    })).toThrow('invalid secure SSO request')
-  })
-})
-
-describe('parseSsoResultMessage', () => {
-  function msg(extra: Record<string, unknown> = {}) {
-    return { type: SSO_RESULT_TYPE, nonce: NONCE, ...extra }
-  }
-
-  it('accepts a valid success message', () => {
-    const session = { access_token: 'at', refresh_token: 'rt' }
-    expect(parseSsoResultMessage({
-      expectedOrigin: ORIGIN,
-      expectedNonce: NONCE,
-      eventOrigin: ORIGIN,
-      data: msg({ ok: true, session }),
-    })).toEqual({ ok: true, session })
-  })
-
-  it('maps failure reasons', () => {
-    expect(parseSsoResultMessage({
-      expectedOrigin: ORIGIN,
-      expectedNonce: NONCE,
-      eventOrigin: ORIGIN,
-      data: msg({ ok: false, reason: 'invalid_request' }),
-    })).toEqual({ ok: false, reason: 'invalid_request' })
-  })
-
-  it('ignores wrong origin, wrong nonce, wrong type and non-objects', () => {
-    const session = { access_token: 'at', refresh_token: 'rt' }
-    expect(parseSsoResultMessage({ expectedOrigin: ORIGIN, expectedNonce: NONCE, eventOrigin: 'https://evil.example.com', data: msg({ ok: true, session }) })).toBeNull()
-    expect(parseSsoResultMessage({ expectedOrigin: ORIGIN, expectedNonce: NONCE, eventOrigin: ORIGIN, data: msg({ nonce: 'other', ok: true, session }) })).toBeNull()
-    expect(parseSsoResultMessage({ expectedOrigin: ORIGIN, expectedNonce: NONCE, eventOrigin: ORIGIN, data: { type: 'nope', nonce: NONCE } })).toBeNull()
-    expect(parseSsoResultMessage({ expectedOrigin: ORIGIN, expectedNonce: NONCE, eventOrigin: ORIGIN, data: 'str' })).toBeNull()
-  })
-
-  it('treats ok:true without a session as a failure', () => {
-    expect(parseSsoResultMessage({
-      expectedOrigin: ORIGIN,
-      expectedNonce: NONCE,
-      eventOrigin: ORIGIN,
-      data: msg({ ok: true }),
-    })).toEqual({ ok: false, reason: 'not_authenticated' })
-  })
-
-  it('passes a custom-login ticket through alongside the session', () => {
-    const session = { access_token: 'at', refresh_token: 'rt' }
-    expect(parseSsoResultMessage({
-      expectedOrigin: ORIGIN,
-      expectedNonce: NONCE,
-      eventOrigin: ORIGIN,
-      data: msg({ ok: true, session, ticket: 'tkt-123' }),
-    })).toEqual({ ok: true, session, ticket: 'tkt-123' })
-  })
-
-  it('omits a missing / empty / non-string ticket (stays backward compatible)', () => {
-    const session = { access_token: 'at', refresh_token: 'rt' }
-    for (const ticket of [undefined, '', 0, false, {}]) {
-      expect(parseSsoResultMessage({
-        expectedOrigin: ORIGIN,
-        expectedNonce: NONCE,
-        eventOrigin: ORIGIN,
-        data: msg({ ok: true, session, ticket }),
-      })).toEqual({ ok: true, session })
+      codeChallenge: CHALLENGE,
+    }
+    for (const invalid of [
+      { ...base, clientId: '' },
+      { ...base, scope: [] },
+      { ...base, redirectUri: 'javascript:alert(1)' },
+      { ...base, ssoOrigin: 'http://localhost:3000' },
+    ]) {
+      expect(() => buildSsoRequestUrl(invalid)).toThrow(TypeError)
     }
   })
-})
 
-describe('readSsoMode (redirect)', () => {
-  it('returns redirect only for the exact value', () => {
-    expect(readSsoMode('redirect')).toBe('redirect')
-    expect(readSsoMode(['redirect'])).toBe('redirect')
-    expect(readSsoMode('Redirect')).toBe('silent')
-    expect(readSsoMode('interactive')).toBe('interactive')
+  it('keeps anonymous-session detection as the provider auth seam', () => {
+    expect(isAnonymousSession({ user: { is_anonymous: true } })).toBe(true)
+    expect(isAnonymousSession({ user: { is_anonymous: false } })).toBe(false)
   })
 })
 
-describe('readSsoReturnUrl', () => {
-  it('accepts http(s) absolute URLs, rejects junk and non-http schemes', () => {
-    expect(readSsoReturnUrl('https://wenta.example/path?x=1')).toBe('https://wenta.example/path?x=1')
-    expect(readSsoReturnUrl('http://localhost:5173/')).toBe('')
-    expect(readSsoReturnUrl('http://localhost:5173/', { allowHttpLocalhost: true })).toBe('http://localhost:5173/')
-    expect(readSsoReturnUrl('https://wenta.example/path#private-fragment')).toBe('https://wenta.example/path')
-    expect(readSsoReturnUrl('https://user:password@wenta.example/path')).toBe('')
-    expect(readSsoReturnUrl('javascript:alert(1)')).toBe('')
-    expect(readSsoReturnUrl('not-a-url')).toBe('')
-    expect(readSsoReturnUrl(undefined)).toBe('')
-  })
-
-  it('binds the redirect return URL to the declared target origin', () => {
-    expect(isSsoRedirectBoundToTarget('https://wenta.example', 'https://wenta.example/deck')).toBe(true)
-    expect(isSsoRedirectBoundToTarget('https://wenta.example', 'https://evil.example/deck')).toBe(false)
-  })
-})
-
-describe('buildSsoRequestUrl (redirect)', () => {
-  it('includes returnUrl only when provided', () => {
-    const base = buildSsoRequestUrl({ ssoOrigin: ORIGIN, mode: 'interactive', targetOrigin: 'https://wenta.example', nonce: NONCE, codeChallenge: CODE_CHALLENGE })
-    expect(base).not.toContain('returnUrl')
-
-    const url = new URL(buildSsoRequestUrl({
-      ssoOrigin: ORIGIN,
-      mode: 'redirect',
-      targetOrigin: 'https://wenta.example',
-      nonce: NONCE,
-      codeChallenge: CODE_CHALLENGE,
-      returnUrl: 'https://wenta.example/deck?x=1',
-    }))
-    expect(url.searchParams.get('mode')).toBe('redirect')
-    expect(url.searchParams.get('returnUrl')).toBe('https://wenta.example/deck?x=1')
-  })
-})
-
-describe('redirect result encode/parse', () => {
+describe('sso v3 redirect response', () => {
   const hashFor = (value: string) => `#${SSO_REDIRECT_HASH_KEY}=${value}`
 
-  it('prefers a bound v2 authorization code and never carries a refresh token', () => {
-    const code = 'c'.repeat(43)
-    const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: true, code })
-    const decoded = parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: NONCE })
-    expect(decoded).toEqual({ ok: true, code, nonce: NONCE })
-    expect(JSON.stringify(decoded)).not.toContain('refresh_token')
+  it('round-trips a code only when nonce and issuer both match', () => {
+    const encoded = encodeSsoRedirectResult({
+      nonce: NONCE,
+      issuer: ISSUER,
+      ok: true,
+      code: 'c'.repeat(43),
+    })
+    expect(parseSsoRedirectResult({
+      hash: hashFor(encoded),
+      expectedNonce: NONCE,
+      expectedIssuer: ISSUER,
+    })).toEqual({
+      ok: true,
+      code: 'c'.repeat(43),
+      nonce: NONCE,
+      issuer: ISSUER,
+    })
+    expect(parseSsoRedirectResult({
+      hash: hashFor(encoded),
+      expectedNonce: NONCE,
+      expectedIssuer: 'https://evil.example',
+    })).toBeNull()
   })
 
-  it('binds a redirect response to the expected authorization-server issuer', () => {
-    const code = 'c'.repeat(43)
-    const enc = encodeSsoRedirectResult({ nonce: NONCE, issuer: ORIGIN, ok: true, code })
-    expect(parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: NONCE, expectedIssuer: ORIGIN })).toEqual({ ok: true, code, nonce: NONCE })
-    expect(parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: NONCE, expectedIssuer: 'https://sso.dev.yunle.fun' })).toBeNull()
-  })
-
-  it('round-trips a failure result with its reason', () => {
-    const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: false, reason: 'not_configured' })
-    expect(parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: NONCE })).toEqual({ ok: false, reason: 'not_configured' })
-  })
-
-  it('rejects a nonce mismatch (CSRF / result-injection guard)', () => {
-    const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: true, code: 'c'.repeat(43) })
-    expect(parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: 'other-nonce' })).toBeNull()
-  })
-
-  it('returns null with no result in the hash, or an empty expected nonce', () => {
-    const enc = encodeSsoRedirectResult({ nonce: NONCE, ok: true, code: 'c'.repeat(43) })
-    expect(parseSsoRedirectResult({ hash: '#room=abc', expectedNonce: NONCE })).toBeNull()
-    expect(parseSsoRedirectResult({ hash: '', expectedNonce: NONCE })).toBeNull()
-    expect(parseSsoRedirectResult({ hash: hashFor(enc), expectedNonce: '' })).toBeNull()
-  })
-
-  it('treats ok:true without a usable code as a failure, rejects legacy ticket fragments, and ignores malformed payloads', () => {
-    const noCode = encodeSsoRedirectResult({ nonce: NONCE, ok: true })
-    const legacyTicket = btoa(JSON.stringify({ nonce: NONCE, ok: true, ticket: 'tkt-xyz' }))
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/, '')
-    expect(parseSsoRedirectResult({ hash: hashFor(noCode), expectedNonce: NONCE })).toEqual({ ok: false, reason: 'not_authenticated' })
-    expect(parseSsoRedirectResult({ hash: hashFor(legacyTicket), expectedNonce: NONCE })).toEqual({ ok: false, reason: 'not_authenticated' })
-    expect(parseSsoRedirectResult({ hash: hashFor('!!!not-base64!!!'), expectedNonce: NONCE })).toBeNull()
-    expect(() => parseSsoRedirectResult({ hash: '#ylf_sso=%E0%A4%A', expectedNonce: NONCE })).not.toThrow()
+  it('rejects responses without issuer and legacy ticket/session payloads', () => {
+    const withoutIssuer = encodeSsoRedirectResult({
+      nonce: NONCE,
+      issuer: '',
+      ok: true,
+      code: 'c'.repeat(43),
+    })
+    const legacy = btoa(JSON.stringify({
+      nonce: NONCE,
+      iss: ISSUER,
+      ok: true,
+      ticket: 'legacy-ticket',
+    }))
+    expect(parseSsoRedirectResult({
+      hash: hashFor(withoutIssuer),
+      expectedNonce: NONCE,
+      expectedIssuer: ISSUER,
+    })).toBeNull()
+    expect(parseSsoRedirectResult({
+      hash: hashFor(legacy),
+      expectedNonce: NONCE,
+      expectedIssuer: ISSUER,
+    })).toEqual({ ok: false, reason: 'invalid_request' })
   })
 })
