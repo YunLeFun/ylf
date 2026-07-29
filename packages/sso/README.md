@@ -8,7 +8,7 @@
 
 | 组件                       | 负责                                                                                 | 不负责                                     |
 | -------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------ |
-| `@yunlefun/sso`            | 顶层重定向、origin/return URL/nonce 绑定、一次性授权码、CloudBase custom ticket 采用 | Drive/CMS cookie、设备列表、撤销、应用授权 |
+| `@yunlefun/sso`            | 顶层重定向/受信宿主授权、PKCE/nonce 绑定、临时身份采用、BFF 双证明校验             | Drive/CMS cookie、设备列表、撤销、应用授权 |
 | `www.yunle.fun`            | 从当前已认证调用上下文派生 uid，签发并原子消费一次性授权码                           | 接受调用者传入 uid；向子站发送主站 session |
 | CloudBase Auth             | 官方 `signInWithCustomTicket` 身份证明                                               | Drive/CMS 的长期应用会话                   |
 | `@yunlefun/server-session` | 256-bit opaque cookie、哈希持久化、过期、轮换、撤销、CSRF                            | 跨站身份联邦                               |
@@ -25,8 +25,10 @@ Safari ITP、存储分区、微信等移动端 WebView、系统浏览器切换�
 同时存活。Consumer 仅在当前 tab 的 `sessionStorage` 保存 nonce 和 PKCE verifier；回跳 URL fragment
 只携带短时、一次性的授权码。即使授权码被截获，没有 verifier 也无法兑换，且消费后不能重放。
 
-因此 `startSsoRedirect()` 是唯一登录入口。v0.5 不再发布隐藏 iframe、popup、session
-转发、原生 bridge 或 legacy 子路径。
+因此普通 Web 使用 `startSsoRedirect()`。受控的云乐坊原生容器可通过
+`@yunlefun/sso/browser` 请求同样绑定 nonce + PKCE 的一次性授权码；它不是通用第三方 bridge，
+不会传递 Apps 的 access token、refresh token 或 session。隐藏 iframe、popup、session 转发
+和 legacy 子路径仍不受支持。
 
 ## v3 安全流程
 
@@ -35,8 +37,8 @@ Safari ITP、存储分区、微信等移动端 WebView、系统浏览器切换�
 3. 已认证 Provider 调用 `sso-ticket` 的 `issueSsoCode`；云函数从当前调用上下文派生 uid，拒绝任何 `uid`/`subject` 输入。
 4. Provider 在回跳 fragment 中只放 256-bit 一次性授权码、nonce 和 `iss`；Consumer 校验预期 issuer，防止 production/development mix-up。fragment 不放 CloudBase ticket、access token 或 refresh token。
 5. Consumer 从自身 origin 以 HTTPS 原子兑换授权码。服务端校验 client ID + issuer environment + Origin + redirect URI + scope + policy fingerprint + nonce + PKCE + TTL，并在事务中将授权码标为已使用。
-6. 兑换响应只返回短暂 CloudBase custom ticket；Consumer 立即交给官方 `signInWithCustomTicket(getTicket)`。
-7. Consumer 用 `auth.getSession()` 验证真实非匿名 session，将 access token 作为一次性证明交给应用 BFF 换取 host-only opaque session，然后清除临时 CloudBase 会话。
+6. 兑换响应只返回短暂 CloudBase custom ticket 与绑定同一交易的签名身份断言；Consumer 立即把 ticket 交给官方 `signInWithCustomTicket(getTicket)`。
+7. Consumer 用 `auth.getSession()` 验证真实非匿名 session，将 access token + 签名断言作为双重一次性证明交给应用 BFF 换取 host-only opaque session，然后清除临时 CloudBase 会话。
 
 授权码只保存 SHA-256 标识，默认 60 秒失效，并且只能成功消费一次。CloudBase custom-login 私钥仅存在于受管函数 secret/env 中。
 
@@ -58,32 +60,52 @@ await startSsoRedirect({
 })
 ```
 
-应用启动时消费结果并兑换：
+应用启动时消费结果；在原生容器中也可优先请求一次静默授权：
 
 ```ts
-import cloudbase from '@cloudbase/js-sdk'
-import { adoptSsoCode, consumeSsoRedirect } from '@yunlefun/sso'
+import { consumeSsoRedirect } from '@yunlefun/sso'
+import {
+  adoptSsoIdentityProof,
+  requestHostSsoAuthorization,
+} from '@yunlefun/sso/browser'
 
-const app = cloudbase.init({
-  env: 'yunlefun-8g7ybcxc7345c490',
-  region: 'ap-shanghai',
-  accessKey: '<publishable-key>',
-  auth: { detectSessionInUrl: true },
-})
-const auth = app.auth({ persistence: 'local' })
+const authorization = await requestHostSsoAuthorization({
+  clientId: 'cms-web',
+  scope: ['identity:bootstrap'],
+  redirectUri: 'https://cms.yunle.fun/',
+}) ?? consumeSsoRedirect()
 
-const redirect = consumeSsoRedirect()
-if (redirect?.ok) {
-  await adoptSsoCode(auth, redirect, {
+if (authorization?.ok) {
+  // auth 必须是隔离、memory-only、persistence: 'none' 的 CloudBase 实例。
+  const proof = await adoptSsoIdentityProof(auth, authorization, {
     exchangeUrl: 'https://api.yunle.fun/sso-ticket',
   })
-}
-
-const { data, error } = await auth.getSession()
-if (error || !data?.session || data.session.user?.is_anonymous) {
-  throw new Error('SSO did not establish a verified session')
+  await fetch('/api/session/login', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(proof),
+  })
+  await auth.signOut()
 }
 ```
+
+BFF 复用相同的双证明校验，再按应用策略创建自己的 opaque session：
+
+```ts
+import { verifySsoIdentityProof } from '@yunlefun/sso/server'
+
+const identity = await verifySsoIdentityProof(proof, {
+  cloudbaseEnvId: 'yunlefun-8g7ybcxc7345c490',
+  appId: 'cms',
+  clientId: 'cms-web',
+  issuer: 'https://www.yunle.fun',
+  jwksUrl: 'https://api.yunle.fun/sso-ticket',
+})
+```
+
+`@yunlefun/sso/browser` 不负责创建 CloudBase 实例或长期 cookie；
+`@yunlefun/sso/server` 不负责应用 allowlist、角色、设备策略和错误文案。
 
 本地 Web 联调也必须使用 Registry 中登记的精确 HTTPS Origin 和 redirect URI，例如
 `https://cms.yunle.localhost:3443/`。production issuer 不接受 development 回跳。

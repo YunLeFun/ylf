@@ -63,7 +63,7 @@ afterEach(() => {
 })
 
 describe('public API boundary', () => {
-  it('exposes only the redirect-code consumer and removes every legacy subpath', async () => {
+  it('keeps the root API limited to the redirect-code consumer', async () => {
     for (const removed of [
       'adoptSession',
       'adoptSsoResult',
@@ -78,6 +78,8 @@ describe('public API boundary', () => {
 
     const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
     expect(manifest.exports).not.toHaveProperty('./legacy')
+    expect(manifest.exports).toHaveProperty('./browser')
+    expect(manifest.exports).toHaveProperty('./server')
   })
 })
 
