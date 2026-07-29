@@ -1,7 +1,7 @@
 {
   "name": "@yunlefun/sso",
   "type": "module",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "云乐坊（Yunle.fun）跨站 SSO：一处登录、各站免登的客户端与协议层",
   "license": "MIT",
   "repository": {
@@ -22,10 +22,20 @@
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
     },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.mjs",
+      "require": "./dist/browser.cjs"
+    },
     "./protocol": {
       "types": "./dist/protocol.d.ts",
       "import": "./dist/protocol.mjs",
       "require": "./dist/protocol.cjs"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.mjs",
+      "require": "./dist/server.cjs"
     }
   },
   "main": "./dist/index.mjs",
@@ -38,6 +48,9 @@
     "build": "unbuild",
     "dev": "unbuild --stub",
     "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "jose": "^6.2.4"
   },
   "devDependencies": {
     "unbuild": "^2.0.0"
