@@ -11,7 +11,7 @@ const nonce = 'n'.repeat(43)
 const userId = 'user-identity-123'
 const config = {
   cloudbaseEnvId: 'yunlefun-test',
-  appId: 'cms',
+  appId: 'fc',
   clientId: 'cms-web',
   issuer: 'https://www.yunle.fun',
   jwksUrl: 'https://api.yunle.fun/sso-ticket',

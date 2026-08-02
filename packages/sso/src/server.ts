@@ -15,7 +15,7 @@ import {
 const IDENTITY_ASSERTION_TYPE = 'ylf-identity+jwt'
 const IDENTITY_ASSERTION_MAX_AGE_SECONDS = 300
 const SSO_NONCE_RE = /^[\w-]{32,128}$/
-const IDENTIFIER_RE = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/
+const IDENTIFIER_RE = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/
 const CLOUDBASE_ENV_RE = /^[a-z0-9][a-z0-9-]{0,63}$/i
 
 export interface SsoIdentityProofInput {
