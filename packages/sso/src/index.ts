@@ -26,6 +26,7 @@ export {
   readSsoCodeChallenge,
   readSsoCodeChallengeMethod,
   readSsoNonce,
+  readSsoPrompt,
   readSsoRedirectUri,
   readSsoScope,
   SSO_QUERY_KEYS,
@@ -33,6 +34,7 @@ export {
 } from './protocol'
 export type {
   SsoFailureReason,
+  SsoPrompt,
   SsoRedirectResult,
   SsoUrlSecurityOptions,
 } from './protocol'

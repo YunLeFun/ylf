@@ -6,12 +6,12 @@
 
 ## 职责边界
 
-| 组件                       | 负责                                                                                 | 不负责                                     |
-| -------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------ |
-| `@yunlefun/sso`            | 顶层重定向/受信宿主授权、PKCE/nonce 绑定、临时身份采用、BFF 双证明校验             | Drive/CMS cookie、设备列表、撤销、应用授权 |
-| `www.yunle.fun`            | 从当前已认证调用上下文派生 uid，签发并原子消费一次性授权码                           | 接受调用者传入 uid；向子站发送主站 session |
-| CloudBase Auth             | 官方 `signInWithCustomTicket` 身份证明                                               | Drive/CMS 的长期应用会话                   |
-| `@yunlefun/server-session` | 256-bit opaque cookie、哈希持久化、过期、轮换、撤销、CSRF                            | 跨站身份联邦                               |
+| 组件                       | 负责                                                                   | 不负责                                     |
+| -------------------------- | ---------------------------------------------------------------------- | ------------------------------------------ |
+| `@yunlefun/sso`            | 顶层重定向/受信宿主授权、PKCE/nonce 绑定、临时身份采用、BFF 双证明校验 | Drive/CMS cookie、设备列表、撤销、应用授权 |
+| `www.yunle.fun`            | 从当前已认证调用上下文派生 uid，签发并原子消费一次性授权码             | 接受调用者传入 uid；向子站发送主站 session |
+| CloudBase Auth             | 官方 `signInWithCustomTicket` 身份证明                                 | Drive/CMS 的长期应用会话                   |
+| `@yunlefun/server-session` | 256-bit opaque cookie、哈希持久化、过期、轮换、撤销、CSRF              | 跨站身份联邦                               |
 
 SSO 与 server-session 因此不会重复：前者回答“这是谁”，后者回答“这个应用是否仍允许这台设备保持登录”。
 
@@ -60,6 +60,18 @@ await startSsoRedirect({
 })
 ```
 
+需要让 Provider 明确展示当前账号并提供换号入口时，使用标准 OAuth/OIDC
+交互提示；它只影响 Provider UI，不进入授权码、回跳结果或身份断言：
+
+```ts
+await startSsoRedirect({
+  clientId: 'cms-web',
+  scope: ['identity:bootstrap'],
+  redirectUri: 'https://cms.yunle.fun/',
+  prompt: 'select_account',
+})
+```
+
 应用启动时消费结果；在原生容器中也可优先请求一次静默授权：
 
 ```ts
@@ -73,6 +85,8 @@ const authorization = await requestHostSsoAuthorization({
   clientId: 'cms-web',
   scope: ['identity:bootstrap'],
   redirectUri: 'https://cms.yunle.fun/',
+  // 显式点击登录时让可信宿主 UI 确认当前账号；静默恢复时省略。
+  prompt: 'consent',
 }) ?? consumeSsoRedirect()
 
 if (authorization?.ok) {
@@ -111,6 +125,7 @@ const identity = await verifySsoIdentityProof(proof, {
 `https://cms.yunle.localhost:3443/`。production issuer 不接受 development 回跳。
 
 ## 已删除的旧表面
+
 `requestSso`、`signInWithSso`、`requestSsoNative`、`adoptSession`、`adoptSsoTicket`
 以及 `@yunlefun/sso/legacy` 均已删除。Consumer 不得接收或保存主站 access token、
 refresh token、session，也不得把 custom ticket 暴露到 SDK 回调之外。

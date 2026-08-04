@@ -3,6 +3,9 @@ import type {
   SsoAuthorizationResult,
   SsoCodeExchangeOptions,
 } from './client'
+import type {
+  SsoPrompt,
+} from './protocol'
 import {
   adoptSsoCode,
   YLF_DEFAULT_SSO_ORIGIN,
@@ -33,6 +36,7 @@ export interface SsoHostAuthorizationRequest {
   nonce: string
   redirectUri: string
   scope: readonly string[]
+  prompt?: SsoPrompt
 }
 
 export interface HostSsoAuthorizationOptions {
@@ -40,6 +44,7 @@ export interface HostSsoAuthorizationOptions {
   scope: readonly string[]
   redirectUri: string
   ssoOrigin?: string
+  prompt?: SsoPrompt
   /** Explicit bridge for tests or non-window runtimes. Defaults to `globalThis.ylf`. */
   host?: SsoHostBridge
 }
@@ -104,14 +109,24 @@ export async function requestHostSsoAuthorization(
 
   const codeVerifier = randomBase64Url(32)
   const nonce = randomBase64Url(32)
-  const response = await host.authorize({
-    clientId,
-    codeChallenge: await deriveSsoPkceChallenge(codeVerifier),
-    codeChallengeMethod: 'S256',
-    nonce,
-    redirectUri,
-    scope,
-  })
+  let response: unknown
+  try {
+    response = await host.authorize({
+      clientId,
+      codeChallenge: await deriveSsoPkceChallenge(codeVerifier),
+      codeChallengeMethod: 'S256',
+      nonce,
+      redirectUri,
+      scope,
+      ...(options.prompt ? { prompt: options.prompt } : {}),
+    })
+  }
+  catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (/(?:^|\b)HOST_AUTH_DENIED(?:\b|$)/.test(message))
+      throw new SsoIdentityAdoptionError('Host authorization was denied', 'access_denied')
+    throw error
+  }
   if (!isRecord(response)
     || response.ok !== true
     || typeof response.code !== 'string'

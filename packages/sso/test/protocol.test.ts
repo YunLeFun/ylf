@@ -10,6 +10,7 @@ import {
   readSsoCodeChallenge,
   readSsoCodeChallengeMethod,
   readSsoNonce,
+  readSsoPrompt,
   readSsoRedirectUri,
   readSsoScope,
   SSO_REDIRECT_HASH_KEY,
@@ -58,6 +59,25 @@ describe('sso v3 request protocol', () => {
     })
     expect(url.searchParams.has('mode')).toBe(false)
     expect(url.searchParams.has('targetOrigin')).toBe(false)
+  })
+
+  it('carries only the supported standard interaction hints', () => {
+    expect(readSsoPrompt('select_account')).toBe('select_account')
+    expect(readSsoPrompt('consent')).toBe('consent')
+    expect(readSsoPrompt('login')).toBe('')
+    expect(readSsoPrompt(['select_account', 'login'])).toBe('select_account')
+
+    const url = new URL(buildSsoRequestUrl({
+      ssoOrigin: ISSUER,
+      clientId: 'cms-web',
+      scope: ['identity:bootstrap'],
+      redirectUri: 'https://cms.yunle.fun/',
+      nonce: NONCE,
+      codeChallenge: CHALLENGE,
+      prompt: 'select_account',
+    }))
+
+    expect(url.searchParams.get('prompt')).toBe('select_account')
   })
 
   it('rejects omitted scope and insecure or malformed requests', () => {

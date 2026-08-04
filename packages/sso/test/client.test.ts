@@ -130,6 +130,20 @@ describe('startSsoRedirect', () => {
     })).rejects.toThrow('transaction')
     expect(assign).not.toHaveBeenCalled()
   })
+
+  it('keeps account selection as a provider interaction hint only', async () => {
+    const { assign, store } = mockWindow()
+    await startSsoRedirect({
+      clientId: 'home-web',
+      scope: ['identity:bootstrap'],
+      redirectUri: 'https://home.yunle.fun/',
+      prompt: 'select_account',
+    })
+
+    const url = new URL(assign.mock.calls[0]?.[0] as string)
+    expect(url.searchParams.get('prompt')).toBe('select_account')
+    expect(JSON.parse(store.get(TRANSACTION_KEY) ?? '{}')).not.toHaveProperty('prompt')
+  })
 })
 
 describe('consumeSsoRedirect', () => {

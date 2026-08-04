@@ -13,6 +13,7 @@ export const SSO_QUERY_KEYS = {
   nonce: 'nonce',
   codeChallenge: 'code_challenge',
   codeChallengeMethod: 'code_challenge_method',
+  prompt: 'prompt',
 } as const
 
 export const SSO_REDIRECT_HASH_KEY = 'ylf_sso'
@@ -22,6 +23,8 @@ export type SsoFailureReason
     | 'invalid_request'
     | 'not_authenticated'
     | 'server_error'
+
+export type SsoPrompt = 'consent' | 'select_account'
 
 export interface SsoUrlSecurityOptions {
   // Reserved for source compatibility of protocol helpers; HTTP is never allowed.
@@ -98,6 +101,11 @@ export function readSsoCodeChallengeMethod(raw: unknown): 'S256' | '' {
   return firstQueryValue(raw) === 'S256' ? 'S256' : ''
 }
 
+export function readSsoPrompt(raw: unknown): SsoPrompt | '' {
+  const value = firstQueryValue(raw)
+  return value === 'consent' || value === 'select_account' ? value : ''
+}
+
 export function isSsoPkceVerifier(value: unknown): value is string {
   return typeof value === 'string' && PKCE_VERIFIER_RE.test(value)
 }
@@ -151,6 +159,7 @@ export function buildSsoRequestUrl(input: {
   redirectUri: string
   nonce: string
   codeChallenge: string
+  prompt?: SsoPrompt
 }): string {
   const issuer = readIssuer(input.ssoOrigin)
   const clientId = readSsoClientId(input.clientId)
@@ -158,8 +167,16 @@ export function buildSsoRequestUrl(input: {
   const redirectUri = readSsoRedirectUri(input.redirectUri)
   const nonce = readSsoNonce(input.nonce)
   const codeChallenge = readSsoCodeChallenge(input.codeChallenge)
-  if (!issuer || !clientId || !scope.length || !redirectUri || !nonce || !codeChallenge)
+  const prompt = input.prompt === undefined ? '' : readSsoPrompt(input.prompt)
+  if (!issuer
+    || !clientId
+    || !scope.length
+    || !redirectUri
+    || !nonce
+    || !codeChallenge
+    || (input.prompt !== undefined && !prompt)) {
     throw new TypeError('invalid secure SSO request')
+  }
 
   const params = new URLSearchParams({
     [SSO_QUERY_KEYS.clientId]: clientId,
@@ -168,6 +185,7 @@ export function buildSsoRequestUrl(input: {
     [SSO_QUERY_KEYS.nonce]: nonce,
     [SSO_QUERY_KEYS.codeChallenge]: codeChallenge,
     [SSO_QUERY_KEYS.codeChallengeMethod]: 'S256',
+    ...(prompt ? { [SSO_QUERY_KEYS.prompt]: prompt } : {}),
   })
   return `${issuer}/auth/sso?${params.toString()}`
 }

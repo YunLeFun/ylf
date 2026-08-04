@@ -41,6 +41,7 @@ describe('requestHostSsoAuthorization', () => {
       clientId: 'cms-web',
       scope: ['identity:bootstrap'],
       redirectUri: 'https://cms.yunle.fun/',
+      prompt: 'consent',
       host: {
         canIUse: vi.fn(async () => true),
         authorize,
@@ -62,6 +63,7 @@ describe('requestHostSsoAuthorization', () => {
       nonce: result?.nonce,
       redirectUri: 'https://cms.yunle.fun/',
       scope: ['identity:bootstrap'],
+      prompt: 'consent',
     })
   })
 
@@ -79,6 +81,24 @@ describe('requestHostSsoAuthorization', () => {
         })),
       },
     })).rejects.toBeInstanceOf(SsoIdentityAdoptionError)
+  })
+
+  it('maps an explicit host denial without treating the host as unavailable', async () => {
+    await expect(requestHostSsoAuthorization({
+      clientId: 'cms-web',
+      scope: ['identity:bootstrap'],
+      redirectUri: 'https://cms.yunle.fun/',
+      prompt: 'consent',
+      host: {
+        canIUse: vi.fn(async () => true),
+        authorize: vi.fn(async () => {
+          throw new Error('HOST_AUTH_DENIED')
+        }),
+      },
+    })).rejects.toMatchObject({
+      name: 'SsoIdentityAdoptionError',
+      reason: 'access_denied',
+    })
   })
 })
 

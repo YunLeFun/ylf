@@ -1,4 +1,4 @@
-import type { SsoRedirectResult } from './protocol'
+import type { SsoPrompt, SsoRedirectResult } from './protocol'
 import {
   buildSsoRequestUrl,
   deriveSsoPkceChallenge,
@@ -21,6 +21,8 @@ export interface RedirectSsoOptions {
   scope: readonly string[]
   redirectUri: string
   ssoOrigin?: string
+  /** Provider interaction hint. It is never stored in or returned from the authorization transaction. */
+  prompt?: SsoPrompt
 }
 
 export interface SsoAuthorizationResult {
@@ -70,6 +72,7 @@ export async function startSsoRedirect(options: RedirectSsoOptions): Promise<voi
     redirectUri: options.redirectUri,
     nonce,
     codeChallenge,
+    prompt: options.prompt,
   })
 
   if (new URL(options.redirectUri).origin !== window.location.origin)
