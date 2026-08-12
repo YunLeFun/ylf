@@ -1,27 +1,15 @@
 // tencent cloud
 
-import type { CreatePurgeTaskRequest } from 'tencentcloud-sdk-nodejs/tencentcloud/services/teo/v20220901/teo_models'
 import type { Argv } from 'yargs'
 
-import consola from 'consola'
 import { colors } from 'consola/utils'
 import { clearSCFVersionsByArgv } from './scf'
-import { getTEOZoneDnsList, getTEOZoneList, runTEOTask } from './teo'
-
-/**
- * default config
- * @todo allow user custom
- */
-const createPurgeTaskRequest: CreatePurgeTaskRequest = {
-  ZoneId: '',
-  // - purge_url：URL刷新；
-  // - purge_prefix：目录刷新；
-  // - purge_host：Hostname 刷新；
-  // - purge_all：站点下全部缓存刷新；
-  // - purge_cache_tag：cache-tag 刷新。缓存清除类型详情请查看[清除缓存](https://cloud.tencent.com/document/product/1552/70759)。
-  Type: 'purge_host',
-  Targets: [],
-}
+import { runTEOTask } from './teo'
+import {
+  buildEdgeOnePurgeRequest,
+  EDGEONE_PURGE_METHODS,
+  EDGEONE_PURGE_TYPES,
+} from './teo-purge'
 
 /**
  * tencent cloud
@@ -39,69 +27,67 @@ export async function registerTencentCloudCommand(args: Argv) {
       return args.command(
         'teo',
         `EdgeOne ${colors.dim('https://console.cloud.tencent.com/edgeone')}`,
-        () => {
-          return args.command('purge', '提交缓存刷新任务', () => {
-            return args
+        (teoArgs) => {
+          return teoArgs.command('purge', '提交缓存刷新任务', (purgeArgs) => {
+            return purgeArgs
               .option('zoneId', {
                 alias: 'z',
                 type: 'string',
                 description: '站点 id',
-                // demandOption: true,
+                demandOption: true,
               })
               .option('type', {
                 alias: 't',
                 type: 'string',
                 description: '刷新类型',
-                choices: ['purge_url', 'purge_prefix', 'purge_host', 'purge_all', 'purge_cache_tag'],
-                demandOption: true,
+                choices: EDGEONE_PURGE_TYPES,
                 default: 'purge_host',
               })
               .option('targets', {
                 alias: 'T',
                 type: 'array',
-                description: '刷新目标',
-                demandOption: true,
+                description: '刷新目标；purge_all 时省略',
+              })
+              .option('method', {
+                alias: 'm',
+                type: 'string',
+                choices: EDGEONE_PURGE_METHODS,
+                description: '目录、Hostname 或全站刷新方法',
+              })
+              .option('cacheTagDomains', {
+                type: 'array',
+                description: 'Cache-Tag 生效域名',
+              })
+              .option('confirmAll', {
+                type: 'string',
+                description: 'purge_all 必须再次填写完整 ZoneId',
+              })
+              .option('dryRun', {
+                type: 'boolean',
+                default: false,
+                description: '仅校验并输出请求，不访问腾讯云',
+              })
+              .option('json', {
+                type: 'boolean',
+                default: false,
+                description: '以单行 JSON 输出任务结果',
               })
           }, async (argv) => {
-            await runTEOTask({
-              ZoneId: argv.zoneId || createPurgeTaskRequest.ZoneId,
-              Type: argv.type,
-              Targets: argv.targets as string[],
+            const request = buildEdgeOnePurgeRequest({
+              zoneId: argv.zoneId,
+              type: argv.type,
+              targets: argv.targets,
+              method: argv.method,
+              cacheTagDomains: argv.cacheTagDomains,
+              confirmAll: argv.confirmAll,
             })
+            if (argv.dryRun) {
+              console.log(JSON.stringify({ dryRun: true, request }, null, argv.json ? 0 : 2))
+              return
+            }
+            await runTEOTask(request, { json: argv.json })
           })
-        },
-        async (_argv) => {
-          const zoneIdList = await getTEOZoneList()
-          const zoneId = await consola.prompt('ZoneId', {
-            type: 'select',
-            options: zoneIdList || [],
-            initial: createPurgeTaskRequest.ZoneId,
-          }) as any as string
-
-          const dnsList = await getTEOZoneDnsList(zoneId)
-
-          const type = await consola.prompt('Type', {
-            type: 'select',
-            options: [
-              { label: 'purge_host', value: 'purge_host', hint: 'Hostname 刷新' },
-              { label: 'purge_url', value: 'purge_url', hint: 'URL 刷新' },
-              { label: 'purge_prefix', value: 'purge_prefix', hint: '目录刷新' },
-              { label: 'purge_all', value: 'purge_all', hint: '站点在节点的全部缓存资源' },
-              { label: 'purge_cache_tag', value: 'purge_cache_tag', hint: 'Cache-Tag 刷新' },
-            ],
-            initial: createPurgeTaskRequest.Type,
-          })
-          const targets = await consola.prompt('Targets', {
-            type: 'multiselect',
-            options: dnsList || [],
-          }) as any as string[]
-
-          console.log('type:', type)
-          await runTEOTask({
-            ZoneId: zoneId,
-            Type: type as any as string,
-            Targets: targets,
-          })
+            .demandCommand(1, '请选择 EdgeOne 子命令，例如 purge')
         },
       )
         .command('scf', '云函数', () => {
