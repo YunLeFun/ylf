@@ -190,7 +190,10 @@ function defaultAuthFile(): string {
 
 async function commandAvailable(command: string): Promise<boolean> {
   const result = await runCommand(command, ['--help'], undefined, true)
-  return result.code === 0 || result.code === 1
+  // `security --help` 在 macOS 会以 2 退出，但命令本身完全可用。这里只应把
+  // spawn 的 ENOENT（映射为 127）视为“未安装”，不能假设各工具的帮助命令
+  // 都遵循 0/1 退出码。
+  return result.code !== 127
 }
 
 function runCommand(
