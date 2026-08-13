@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cdn.jsdelivr.net/npm/ylf@0.0.1/schema/ylf.pages.schema.json",
+  "title": "YunLeFun Pages configuration",
+  "description": "Project and output mapping for ylf pages deploy. Access policy is managed in Admin and is intentionally excluded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workspace",
+    "project",
+    "output"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri"
+    },
+    "workspace": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]$"
+    },
+    "project": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 48,
+      "pattern": "^[a-z0-9][a-z0-9-]{0,46}[a-z0-9]$"
+    },
+    "output": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Static output directory relative to this configuration file."
+    }
+  }
+}

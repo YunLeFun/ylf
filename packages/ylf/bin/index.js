@@ -1,7 +1,5 @@
-#!/usr/bin/env bun
-// TODO fallback
-// #!/usr/bin/env vite-node --script
+#!/usr/bin/env node
 
-import { main } from '../index'
+import { main } from '../dist/bin.mjs'
 
 main()

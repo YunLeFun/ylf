@@ -3,6 +3,8 @@ import yargs from 'yargs'
 import { hideBin } from 'yargs/helpers'
 
 import { version } from '../../package.json'
+import { registerAuthCommand } from './auth'
+import { registerPagesCommand } from './pages'
 import { registerTencentCloudCommand } from './tencent'
 
 const cli = yargs(hideBin(process.argv))
@@ -21,6 +23,8 @@ cli.command('hello', 'Prints "Hello, World!"', () => {
 })
 
 registerTencentCloudCommand(cli)
+registerAuthCommand(cli)
+registerPagesCommand(cli)
 
 export async function parseCli() {
   await cli

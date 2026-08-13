@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@10.13.1",
   "scripts": {
-    "build": "pnpm --filter cilicili --filter @yunlefun/types --filter @yunlefun/deploy --filter @yunlefun/sso --filter @yunlefun/server-session --filter @yunlefun/server-session-cloudbase build",
+    "build": "pnpm --filter cilicili --filter @yunlefun/types --filter @yunlefun/deploy --filter @yunlefun/sso --filter @yunlefun/server-session --filter @yunlefun/server-session-cloudbase --filter ylf build",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest"
@@ -20,6 +20,7 @@
     "changelogithub": "^14.0.0",
     "eslint": "^9.14.0",
     "eslint-plugin-format": "^0.1.2",
+    "tsdown": "^0.22.14",
     "vite": "^7.3.0",
     "vitest": "^4.1.0"
   }
