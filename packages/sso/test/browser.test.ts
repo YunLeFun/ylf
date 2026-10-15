@@ -5,6 +5,7 @@ import {
   requestHostSsoAuthorization,
   SsoIdentityAdoptionError,
 } from '../src/browser'
+import { acquisition } from './acquisition-fixture'
 
 const authorization = {
   ok: true,
@@ -22,6 +23,24 @@ afterEach(() => {
 })
 
 describe('requestHostSsoAuthorization', () => {
+  it('passes only sanitized attribution to the host and keeps the original snapshot', async () => {
+    const authorize = vi.fn(async (_request: unknown) => ({
+      ok: true,
+      code: 'c'.repeat(43),
+      issuer: 'https://www.yunle.fun',
+      acquisition: { forged: true },
+    }))
+    const result = await requestHostSsoAuthorization({
+      clientId: 'cms-web',
+      scope: ['identity:bootstrap'],
+      redirectUri: 'https://cms.yunle.fun/',
+      acquisition,
+      host: { canIUse: async () => true, authorize },
+    })
+    expect(authorize.mock.calls[0]?.[0]).toMatchObject({ acquisition })
+    expect(result?.acquisition).toEqual(acquisition)
+  })
+
   it('returns null when no capable first-party host exists', async () => {
     vi.stubGlobal('window', {})
     await expect(requestHostSsoAuthorization({

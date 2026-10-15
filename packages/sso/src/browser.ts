@@ -1,3 +1,4 @@
+import type { AcquisitionContext } from './acquisition'
 import type {
   SsoAdoptionAuth,
   SsoAuthorizationResult,
@@ -6,6 +7,7 @@ import type {
 import type {
   SsoPrompt,
 } from './protocol'
+import { sanitizeAcquisitionContext } from './acquisition'
 import {
   adoptSsoCode,
   YLF_DEFAULT_SSO_ORIGIN,
@@ -37,6 +39,7 @@ export interface SsoHostAuthorizationRequest {
   redirectUri: string
   scope: readonly string[]
   prompt?: SsoPrompt
+  acquisition?: AcquisitionContext
 }
 
 export interface HostSsoAuthorizationOptions {
@@ -45,6 +48,7 @@ export interface HostSsoAuthorizationOptions {
   redirectUri: string
   ssoOrigin?: string
   prompt?: SsoPrompt
+  acquisition?: AcquisitionContext
   /** Explicit bridge for tests or non-window runtimes. Defaults to `globalThis.ylf`. */
   host?: SsoHostBridge
 }
@@ -109,6 +113,7 @@ export async function requestHostSsoAuthorization(
 
   const codeVerifier = randomBase64Url(32)
   const nonce = randomBase64Url(32)
+  const acquisition = sanitizeAcquisitionContext(options.acquisition)
   let response: unknown
   try {
     response = await host.authorize({
@@ -119,6 +124,7 @@ export async function requestHostSsoAuthorization(
       redirectUri,
       scope,
       ...(options.prompt ? { prompt: options.prompt } : {}),
+      ...(acquisition ? { acquisition } : {}),
     })
   }
   catch (error) {
@@ -144,6 +150,7 @@ export async function requestHostSsoAuthorization(
     redirectUri,
     nonce,
     codeVerifier,
+    ...(acquisition ? { acquisition } : {}),
   })
 }
 

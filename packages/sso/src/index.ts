@@ -1,4 +1,12 @@
 export {
+  ACQUISITION_MAX_BYTES,
+  decodeAcquisitionContext,
+  encodeAcquisitionContext,
+  readAcquisitionContext,
+  sanitizeAcquisitionContext,
+} from './acquisition'
+export type { AcquisitionContext, AcquisitionTouch } from './acquisition'
+export {
   adoptSsoCode,
   consumeSsoRedirect,
   startSsoRedirect,

@@ -6,6 +6,9 @@
  * authorization core.
  */
 
+import type { AcquisitionContext } from './acquisition'
+import { encodeAcquisitionContext } from './acquisition'
+
 export const SSO_QUERY_KEYS = {
   clientId: 'client_id',
   redirectUri: 'redirect_uri',
@@ -14,6 +17,7 @@ export const SSO_QUERY_KEYS = {
   codeChallenge: 'code_challenge',
   codeChallengeMethod: 'code_challenge_method',
   prompt: 'prompt',
+  acquisition: 'acquisition',
 } as const
 
 export const SSO_REDIRECT_HASH_KEY = 'ylf_sso'
@@ -160,6 +164,7 @@ export function buildSsoRequestUrl(input: {
   nonce: string
   codeChallenge: string
   prompt?: SsoPrompt
+  acquisition?: AcquisitionContext
 }): string {
   const issuer = readIssuer(input.ssoOrigin)
   const clientId = readSsoClientId(input.clientId)
@@ -178,6 +183,7 @@ export function buildSsoRequestUrl(input: {
     throw new TypeError('invalid secure SSO request')
   }
 
+  const acquisition = encodeAcquisitionContext(input.acquisition)
   const params = new URLSearchParams({
     [SSO_QUERY_KEYS.clientId]: clientId,
     [SSO_QUERY_KEYS.redirectUri]: redirectUri,
@@ -186,6 +192,7 @@ export function buildSsoRequestUrl(input: {
     [SSO_QUERY_KEYS.codeChallenge]: codeChallenge,
     [SSO_QUERY_KEYS.codeChallengeMethod]: 'S256',
     ...(prompt ? { [SSO_QUERY_KEYS.prompt]: prompt } : {}),
+    ...(acquisition ? { [SSO_QUERY_KEYS.acquisition]: acquisition } : {}),
   })
   return `${issuer}/auth/sso?${params.toString()}`
 }

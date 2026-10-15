@@ -130,6 +130,24 @@ const identity = await verifySsoIdentityProof(proof, {
 以及 `@yunlefun/sso/legacy` 均已删除。Consumer 不得接收或保存主站 access token、
 refresh token、session，也不得把 custom ticket 暴露到 SDK 回调之外。
 
+## 可选注册来源（0.7.0）
+
+`startSsoRedirect`、`buildSsoRequestUrl` 和 `requestHostSsoAuthorization` 接受可选
+`acquisition: { version: 1, firstTouch, registerTouch }`。每个 touch 包含
+`capturedAt`、`landingHost`、`landingPath`、`referrerHost`、`utmSource`、`utmMedium`、`utmCampaign`。
+Consumer 应在首次落地时保存来源，在认证开始时读取同一份快照；OAuth/SSO 回调不应重新采集。
+
+根入口导出 `readAcquisitionContext`、`sanitizeAcquisitionContext`、
+`encodeAcquisitionContext` 和 `decodeAcquisitionContext`。编码结果是 UTF-8 JSON，
+通过 `URLSearchParams` 写入 `acquisition` query；读取时传入 `searchParams.get()` 的结果，
+不再执行 `decodeURIComponent`。完整 JSON 最大 4096 字节；域名最长 253、路径最长 256、UTM 最长 120。
+只保留白名单字段，路径去查询/hash，域名与 UTM 拒绝凭证格式和控制字符。
+畸形来源会忽略，原有 nonce、issuer、Registry 和 PKCE 校验仍正常执行。
+
+来源在 Consumer 的事务和验证成功的回调中保留；它是客户端上报的分析数据，
+不能参与授权、判定是否新账号或覆盖服务端解析的应用 ID。Provider 自行完成注册确认、
+私有来源持久化以及按 UID 去重。旧 Consumer 不传该字段仍可使用。
+
 ## Provider 要求
 
 - Provider 页面只做协议语法和同源回跳检查；`sso-ticket` 的版本化 Client Registry 是唯一授权真源。

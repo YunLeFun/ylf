@@ -11,6 +11,7 @@ import {
   encodeSsoRedirectResult,
   SSO_REDIRECT_HASH_KEY,
 } from '../src/protocol'
+import { acquisition } from './acquisition-fixture'
 
 const g = globalThis as unknown as { window?: unknown }
 const TRANSACTION_KEY = 'ylf:sso:v3:transaction'
@@ -84,6 +85,26 @@ describe('public API boundary', () => {
 })
 
 describe('startSsoRedirect', () => {
+  it('preserves sanitized attribution through a validated one-time callback', async () => {
+    const { assign, store } = mockWindow()
+    await startSsoRedirect({
+      clientId: 'home-web',
+      scope: ['identity:bootstrap'],
+      redirectUri: 'https://home.yunle.fun/',
+      acquisition,
+    })
+    const url = new URL(assign.mock.calls[0]?.[0] as string)
+    const encoded = encodeSsoRedirectResult({
+      nonce: url.searchParams.get('nonce')!,
+      issuer: 'https://www.yunle.fun',
+      ok: true,
+      code: 'c'.repeat(43),
+    })
+    mockWindow({ hash: `#${SSO_REDIRECT_HASH_KEY}=${encoded}`, store: Object.fromEntries(store) })
+    expect(consumeSsoRedirect()).toMatchObject({ acquisition, ok: true })
+    expect(consumeSsoRedirect()).toBeNull()
+  })
+
   it('requires clientId and scope, persists one bound transaction, then navigates top-level', async () => {
     const { assign, store } = mockWindow()
     await startSsoRedirect({
@@ -147,6 +168,22 @@ describe('startSsoRedirect', () => {
 })
 
 describe('consumeSsoRedirect', () => {
+  it('does not reject a valid authorization when stored optional attribution is malformed', () => {
+    const encoded = encodeSsoRedirectResult({
+      nonce: 'n'.repeat(43),
+      issuer: 'https://www.yunle.fun',
+      ok: true,
+      code: 'c'.repeat(43),
+    })
+    mockWindow({
+      hash: `#${SSO_REDIRECT_HASH_KEY}=${encoded}`,
+      store: { [TRANSACTION_KEY]: transaction({ acquisition: { version: 9 } }) },
+    })
+    const result = consumeSsoRedirect()
+    expect(result).toMatchObject({ ok: true, code: 'c'.repeat(43) })
+    expect(result).not.toHaveProperty('acquisition')
+  })
+
   it('returns a complete immutable exchange binding and consumes stored state', () => {
     const encoded = encodeSsoRedirectResult({
       nonce: 'n'.repeat(43),

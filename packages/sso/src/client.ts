@@ -1,4 +1,6 @@
+import type { AcquisitionContext } from './acquisition'
 import type { SsoPrompt, SsoRedirectResult } from './protocol'
+import { sanitizeAcquisitionContext } from './acquisition'
 import {
   buildSsoRequestUrl,
   deriveSsoPkceChallenge,
@@ -23,6 +25,7 @@ export interface RedirectSsoOptions {
   ssoOrigin?: string
   /** Provider interaction hint. It is never stored in or returned from the authorization transaction. */
   prompt?: SsoPrompt
+  acquisition?: AcquisitionContext
 }
 
 export interface SsoAuthorizationResult {
@@ -34,6 +37,7 @@ export interface SsoAuthorizationResult {
   redirectUri: string
   nonce: string
   codeVerifier: string
+  acquisition?: AcquisitionContext
 }
 
 export interface SsoAdoptionAuth {
@@ -55,6 +59,7 @@ interface StoredTransaction {
   nonce: string
   codeVerifier: string
   createdAt: number
+  acquisition?: AcquisitionContext
 }
 
 export async function startSsoRedirect(options: RedirectSsoOptions): Promise<void> {
@@ -65,6 +70,7 @@ export async function startSsoRedirect(options: RedirectSsoOptions): Promise<voi
   const nonce = randomBase64Url(32)
   const codeVerifier = randomBase64Url(32)
   const codeChallenge = await deriveSsoPkceChallenge(codeVerifier)
+  const acquisition = sanitizeAcquisitionContext(options.acquisition)
   const authorizationUrl = buildSsoRequestUrl({
     ssoOrigin: issuer,
     clientId: options.clientId,
@@ -73,6 +79,7 @@ export async function startSsoRedirect(options: RedirectSsoOptions): Promise<voi
     nonce,
     codeChallenge,
     prompt: options.prompt,
+    ...(acquisition ? { acquisition } : {}),
   })
 
   if (new URL(options.redirectUri).origin !== window.location.origin)
@@ -86,6 +93,7 @@ export async function startSsoRedirect(options: RedirectSsoOptions): Promise<voi
     nonce,
     codeVerifier,
     createdAt: Date.now(),
+    ...(acquisition ? { acquisition } : {}),
   }
   try {
     window.sessionStorage.setItem(TRANSACTION_KEY, JSON.stringify(transaction))
@@ -133,6 +141,7 @@ export function consumeSsoRedirect(): SsoAuthorizationResult | Extract<SsoRedire
     scope: Object.freeze([...transaction.scope]),
     redirectUri: transaction.redirectUri,
     codeVerifier: transaction.codeVerifier,
+    ...(transaction.acquisition ? { acquisition: transaction.acquisition } : {}),
   })
 }
 
@@ -194,6 +203,7 @@ function parseTransaction(raw: string): StoredTransaction | null {
     const nonce = typeof value.nonce === 'string' ? value.nonce : ''
     const codeVerifier = typeof value.codeVerifier === 'string' ? value.codeVerifier : ''
     const createdAt = typeof value.createdAt === 'number' ? value.createdAt : Number.NaN
+    const acquisition = sanitizeAcquisitionContext(value.acquisition)
     if (!issuer
       || new URL(issuer).origin !== issuer
       || !clientId
@@ -212,6 +222,7 @@ function parseTransaction(raw: string): StoredTransaction | null {
       nonce,
       codeVerifier,
       createdAt,
+      ...(acquisition ? { acquisition } : {}),
     }
   }
   catch {
