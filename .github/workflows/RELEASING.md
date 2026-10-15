@@ -3,7 +3,7 @@
 npm 包通过 GitHub Actions 发布（`.github/workflows/release.yml`），用 **npm Trusted
 Publishing（OIDC，免 token）**：CI 凭 GitHub 的 OIDC id-token 直接换取发布凭证，
 **不需要任何长期密钥**。公开仓库发布公开包时，npm 会自动附带 provenance 供应链溯源；
-本仓库当前为 private，Trusted Publishing 仍可用，但不会生成公开可验证的 provenance 声明。
+公开仓库使用标准 GitHub-hosted runner 发布，无需本地 npm 登录。
 
 ## 一次性配置（每个包做一次）
 
@@ -70,10 +70,10 @@ git tag '@yunlefun/deploy@0.0.12' && git push origin '@yunlefun/deploy@0.0.12'
 - 自动 changelog 只在**推 tag**时生成（手动 `workflow_dispatch` 无 tag，会跳过该步——
   想要 Release 就用推 tag 的方式发布）。
 
-Trusted Publisher 会让能够修改仓库和该工作流的成员获得包发布能力。当前 private 仓库
-套餐不提供 `main` branch protection，因此仓库写权限必须只授予同时拥有 npm 发布权限的
-维护者，并强制启用 GitHub 2FA。若升级套餐，应立即启用受保护分支和带审批人的
-`npm-publish` Environment，并把同名 Environment 同时绑定到 npm Trusted Publisher。
+Trusted Publisher 会让能够修改仓库和该工作流的成员获得包发布能力。仓库写权限只授予
+同时拥有 npm 发布权限的维护者，并强制启用 GitHub 2FA。应使用受保护分支；若配置带
+审批人的 `npm-publish` Environment，须把同名 Environment 同时绑定到 npm Trusted
+Publisher，避免信任配置与工作流不一致。
 
 ## 回退原则
 
