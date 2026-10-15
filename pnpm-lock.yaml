@@ -194,9 +194,6 @@ importers:
       tencentcloud-sdk-nodejs:
         specifier: ^4.0.970
         version: 4.1.244(encoding@0.1.13)
-      typescript:
-        specifier: ^5.0.0
-        version: 5.9.3
       yargs:
         specifier: ^17.7.2
         version: 17.7.2
