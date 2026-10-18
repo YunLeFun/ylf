@@ -1,0 +1,40 @@
+{
+  "description": "跨 App 授权回调契约：@yunlefun/sso encodeSsoRedirectResult 的逐字节结果。云乐坊 iOS、Life 与本包共用，修改需三处同步。",
+  "issuer": "https://www.yunle.fun",
+  "nonce": "Xq3vR7mK2pT9wL4sN8bY6cF1hJ5dG0aZ-_eUiOoPqWe",
+  "code": "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE",
+  "redirectUri": "https://life.yunle.fun/auth/callback",
+  "hashKey": "ylf_sso",
+  "cases": [
+    {
+      "name": "approved",
+      "payload": {
+        "nonce": "Xq3vR7mK2pT9wL4sN8bY6cF1hJ5dG0aZ-_eUiOoPqWe",
+        "iss": "https://www.yunle.fun",
+        "ok": true,
+        "code": "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE"
+      },
+      "encoded": "eyJub25jZSI6IlhxM3ZSN21LMnBUOXdMNHNOOGJZNmNGMWhKNWRHMGFaLV9lVWlPb1BxV2UiLCJpc3MiOiJodHRwczovL3d3dy55dW5sZS5mdW4iLCJvayI6dHJ1ZSwiY29kZSI6IkFiQ2RFZkdoSWpLbE1uT3BRclN0VXZXeFl6MDEyMzQ1Njc4OS1fQWJDZEUifQ"
+    },
+    {
+      "name": "denied",
+      "payload": {
+        "nonce": "Xq3vR7mK2pT9wL4sN8bY6cF1hJ5dG0aZ-_eUiOoPqWe",
+        "iss": "https://www.yunle.fun",
+        "ok": false,
+        "reason": "access_denied"
+      },
+      "encoded": "eyJub25jZSI6IlhxM3ZSN21LMnBUOXdMNHNOOGJZNmNGMWhKNWRHMGFaLV9lVWlPb1BxV2UiLCJpc3MiOiJodHRwczovL3d3dy55dW5sZS5mdW4iLCJvayI6ZmFsc2UsInJlYXNvbiI6ImFjY2Vzc19kZW5pZWQifQ"
+    },
+    {
+      "name": "accountSelectionRequired",
+      "payload": {
+        "nonce": "Xq3vR7mK2pT9wL4sN8bY6cF1hJ5dG0aZ-_eUiOoPqWe",
+        "iss": "https://www.yunle.fun",
+        "ok": false,
+        "reason": "account_selection_required"
+      },
+      "encoded": "eyJub25jZSI6IlhxM3ZSN21LMnBUOXdMNHNOOGJZNmNGMWhKNWRHMGFaLV9lVWlPb1BxV2UiLCJpc3MiOiJodHRwczovL3d3dy55dW5sZS5mdW4iLCJvayI6ZmFsc2UsInJlYXNvbiI6ImFjY291bnRfc2VsZWN0aW9uX3JlcXVpcmVkIn0"
+    }
+  ]
+}

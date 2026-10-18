@@ -24,6 +24,8 @@ export const SSO_REDIRECT_HASH_KEY = 'ylf_sso'
 
 export type SsoFailureReason
   = | 'access_denied'
+    // OpenID Connect Core：用户想换账号，接入方应改用网页授权（prompt=select_account）
+    | 'account_selection_required'
     | 'invalid_request'
     | 'not_authenticated'
     | 'server_error'
@@ -62,6 +64,7 @@ const PKCE_VERIFIER_RE = /^[\w.~-]{43,128}$/
 const SCOPE_RE = /^[a-z][a-z0-9]*(?::[a-z][a-z0-9]*)?$/
 const FAILURE_REASONS: readonly SsoFailureReason[] = [
   'access_denied',
+  'account_selection_required',
   'invalid_request',
   'not_authenticated',
   'server_error',

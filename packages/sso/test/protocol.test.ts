@@ -1,3 +1,5 @@
+import type { SsoFailureReason } from '../src/protocol'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   buildSsoRequestUrl,
@@ -155,5 +157,38 @@ describe('sso v3 redirect response', () => {
       expectedNonce: NONCE,
       expectedIssuer: ISSUER,
     })).toEqual({ ok: false, reason: 'invalid_request' })
+  })
+})
+
+interface CrossAppFixture {
+  issuer: string
+  nonce: string
+  cases: {
+    name: string
+    payload: { nonce: string, iss: string, ok: boolean, code?: string, reason?: SsoFailureReason }
+    encoded: string
+  }[]
+}
+
+const crossApp = JSON.parse(readFileSync(new URL('./fixtures/cross-app-redirect.json', import.meta.url), 'utf8')) as CrossAppFixture
+
+describe('cross-app redirect contract', () => {
+  it.each(crossApp.cases)('encodes $name byte-for-byte like the shared fixture', ({ payload, encoded }) => {
+    expect(encodeSsoRedirectResult({
+      nonce: payload.nonce,
+      issuer: payload.iss,
+      ok: payload.ok,
+      code: payload.code,
+      reason: payload.reason,
+    })).toBe(encoded)
+  })
+
+  it('parses account_selection_required as a known failure reason', () => {
+    const accountSelection = crossApp.cases.find(item => item.name === 'accountSelectionRequired')!
+    expect(parseSsoRedirectResult({
+      hash: `#${SSO_REDIRECT_HASH_KEY}=${accountSelection.encoded}`,
+      expectedNonce: crossApp.nonce,
+      expectedIssuer: crossApp.issuer,
+    })).toEqual({ ok: false, reason: 'account_selection_required' })
   })
 })
