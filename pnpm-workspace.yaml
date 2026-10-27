@@ -2,6 +2,12 @@ packages:
   - packages/*
   - packages/deploy/examples/*
 
+catalog:
+  '@types/node': ^25.9.2
+  typescript: ^5.9.3
+  unbuild: ^3.6.1
+  vitest: ^4.1.0
+
 overrides:
   axios: ^1.17.0
   esbuild: ^0.25.0

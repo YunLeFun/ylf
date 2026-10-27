@@ -27,6 +27,18 @@ Actions，填：
 对 `cilicili`、`ylf` 等其它要发的包重复一次（每个包独立配置一次）。可用
 `npm trust list <包名>` 验证配置。
 
+Support SDK 的一次性配置同样绑定本仓库已有工作流：
+
+```bash
+npm trust github @yunlefun/support-client \
+  --repo YunLeFun/ylf \
+  --file release.yml \
+  --allow-publish
+```
+
+Support 主服务继续私有，SDK 的源码、测试、MIT 许可与发布元数据统一维护在
+`packages/support-client`。不从公开 CI 拉取 Support 私有仓库或生产配置。
+
 > npm 只能在已存在的包上配置 Trusted Publisher。新包需由维护者用 WebAuth/2FA
 > 完成一次 `npm publish --access public` 引导发布，再立即配置 Trusted Publisher；
 > 后续发布全部走 OIDC。工作流已带 `--access public`。
@@ -37,6 +49,8 @@ Actions，填：
 
 ```bash
 gh workflow run release.yml -f package=server-session
+# Support SDK：
+gh workflow run release.yml --repo YunLeFun/ylf -f package=support-client
 ```
 
 或 GitHub 网页 Actions → Release → Run workflow 选包。
@@ -58,6 +72,21 @@ git tag '@yunlefun/deploy@0.0.12' && git push origin '@yunlefun/deploy@0.0.12'
 6. **仅 tag 触发**时，`changelogithub` 按 conventional commits 自动创建/更新该 tag 的
    **GitHub Release**（仓库级：纳入与上一个 tag 之间的全部提交，按 feat/fix 等分类）。
 
+Support SDK 发布前额外执行自身类型检查、离线测试与实际 tarball 安装验收；包内
+白名单只允许运行产物、类型、元数据、README 和 MIT LICENSE。发布后通过无凭据
+registry 读取并校验 SHA-512 integrity，下载回装，验证根入口、两个 Node 子入口和
+TypeScript 类型。临时消费项目在结束时自动清理。可在本地复用：
+
+```bash
+pnpm --filter @yunlefun/support-client pack --out /tmp/support-client.tgz
+node scripts/check-support-client-package.mjs /tmp/support-client.tgz
+node scripts/check-support-client-package.mjs --registry 0.4.0
+```
+
+tag 示例为 `@yunlefun/support-client@0.4.0`，必须与包内版本完全一致。首次引导后
+同版本的工作流只会跳过已有发布；后续更新版本再推对应 tag，验证真实 OIDC 发布。
+每个包使用独立版本，不要求一次发布全部 SDK。
+
 要点：
 
 - `publish` 任务只有 `contents: read` + `id-token: write`；建 GitHub Release 的
@@ -65,6 +94,7 @@ git tag '@yunlefun/deploy@0.0.12' && git push origin '@yunlefun/deploy@0.0.12'
 - 固定使用经过验证的 npm 11.16.0（Trusted Publishing 需 npm ≥ 11.5.1）；
 - 发布提交必须位于 `main` 历史中，tag 必须严格等于 `<package-name>@<version>`；
 - tarball 固定写入 Runner 临时目录的唯一文件，避免误发工作区残留包；
+- 发布串行执行；安装依赖前先核对发布提交属于 main，发布任务不恢复依赖缓存；
 - 各包 `package.json` 含 `repository` 字段（provenance 必需）；
 - changelog 需要完整 git 历史，故 `checkout` 用 `fetch-depth: 0`；
 - 自动 changelog 只在**推 tag**时生成（手动 `workflow_dispatch` 无 tag，会跳过该步——
