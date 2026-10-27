@@ -1,7 +1,7 @@
 # @yunlefun/support-client
 
 统一支持入口与应用内私密反馈 SDK。无框架依赖，使用原生 fetch；支持 Node 18.15+，新服务推荐受支持的 Node LTS。
-版本 0.4.0 提供 `/feishu`、结构化联系方式和 `SupportApiError`。通过 npm 安装无需访问私有源码仓库：
+0.4 系列提供 `/feishu`、结构化联系方式和 `SupportApiError`。0.4.1 与 0.4.0 的 API 保持兼容，发布统一通过公开 ylf 的 OIDC 流程维护。通过 npm 安装无需访问私有源码仓库：
 
 ```sh
 pnpm add @yunlefun/support-client@^0.4.0
