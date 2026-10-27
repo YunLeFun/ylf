@@ -44,11 +44,12 @@ async function bytes(response, maximum) {
 async function download(version, target) {
   assert(/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version), 'Invalid SDK version')
   let metadata
-  for (let attempt = 0; attempt < 6; attempt++) {
+  // New npm versions may be accepted before registry processing finishes.
+  for (let attempt = 0; attempt < 18; attempt++) {
     const response = await fetch(`${registry}/${encodeURIComponent(packageName)}/${version}`, { redirect: 'error', signal: AbortSignal.timeout(15_000) })
-    if ([404, 429, 502, 503].includes(response.status) && attempt < 5) {
+    if ([404, 429, 502, 503].includes(response.status) && attempt < 17) {
       await response.body?.cancel()
-      await setTimeout(2_000 * (attempt + 1))
+      await setTimeout(Math.min(10_000, 2_000 * (attempt + 1)))
       continue
     }
     metadata = JSON.parse((await bytes(response, 262_144)).toString('utf8'))
