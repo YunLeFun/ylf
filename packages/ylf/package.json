@@ -2,15 +2,12 @@
   "name": "ylf",
   "type": "module",
   "version": "0.0.1",
+  "description": "YunLeFun command-line tools",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/YunLeFun/ylf.git",
     "directory": "packages/ylf"
-  },
-  "description": "YunLeFun command-line tools",
-  "license": "MIT",
-  "engines": {
-    "node": ">=20.19.0"
   },
   "exports": {
     ".": {
@@ -26,6 +23,9 @@
     "dist",
     "schema"
   ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "build": "tsdown",
     "prepack": "pnpm build",

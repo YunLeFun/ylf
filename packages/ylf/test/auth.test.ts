@@ -114,9 +114,9 @@ describe('ylf auth device flow', () => {
       refreshToken: 'expired-refresh',
       refreshExpiresAt: 2,
     })
-    await expect(refreshAuthSession({ store, now: () => 3 })).rejects.toMatchObject<Partial<YlfAuthError>>({
+    await expect(refreshAuthSession({ store, now: () => 3 })).rejects.toMatchObject({
       code: 'login_required',
-    })
+    } satisfies Partial<YlfAuthError>)
     expect(await store.load()).toBeNull()
   })
 })

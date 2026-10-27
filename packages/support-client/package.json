@@ -1,0 +1,56 @@
+{
+  "name": "@yunlefun/support-client",
+  "type": "module",
+  "version": "0.4.0",
+  "description": "YunLeFun Support links and private feedback integration SDK",
+  "license": "MIT",
+  "homepage": "https://github.com/YunLeFun/ylf/tree/main/packages/support-client#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YunLeFun/ylf.git",
+    "directory": "packages/support-client"
+  },
+  "bugs": {
+    "url": "https://github.com/YunLeFun/ylf/issues"
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./server": {
+      "types": "./dist/server.d.mts",
+      "node": "./dist/server.mjs"
+    },
+    "./feishu": {
+      "types": "./dist/feishu.d.mts",
+      "node": "./dist/feishu.mjs"
+    }
+  },
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18.15.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "unbuild",
+    "dev": "unbuild --stub",
+    "prepack": "pnpm run build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run test"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "unbuild": "catalog:",
+    "vitest": "catalog:"
+  }
+}
