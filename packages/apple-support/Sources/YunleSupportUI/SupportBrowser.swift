@@ -158,7 +158,7 @@ private final class SupportBrowserModel: NSObject, ObservableObject, WKNavigatio
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        guard !navigationResponse.isForMainFrame || navigationResponse.response.url.map { SupportConfiguration.allows($0, origin: origin) } == true
+        guard !navigationResponse.isForMainFrame || navigationResponse.response.url.map({ SupportConfiguration.allows($0, origin: origin) }) == true
         else { decisionHandler(.cancel); return }
         decisionHandler(.allow)
     }
