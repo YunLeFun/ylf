@@ -1,10 +1,10 @@
 import SwiftUI
 
 /// Brand artwork bundled with the package so support menus also work offline.
-public enum SupportBrand: String, CaseIterable {
+public enum SupportBrand: String {
     case wechat, github, x, bilibili
 
-    public var image: Image {
+    fileprivate var image: Image {
         Image("support-" + rawValue, bundle: .module)
     }
 
@@ -23,19 +23,25 @@ public enum SupportMenuIcon {
     case brand(SupportBrand)
 }
 
+/// A short row value or an explanatory subtitle, with distinct layout semantics.
+public enum SupportMenuDetail {
+    case value(String)
+    case subtitle(String)
+}
+
 /// A common label for Button, Link, NavigationLink and DisclosureGroup rows.
 public struct SupportMenuLabel: View {
     private let title: String
     private let icon: SupportMenuIcon
-    private let value: String?
+    private let detail: SupportMenuDetail?
     private let external: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.isEnabled) private var isEnabled
 
-    public init(_ title: String, icon: SupportMenuIcon, value: String? = nil, external: Bool = false) {
+    public init(_ title: String, icon: SupportMenuIcon, detail: SupportMenuDetail? = nil, external: Bool = false) {
         self.title = title
         self.icon = icon
-        self.value = value
+        self.detail = detail
         self.external = external
     }
 
@@ -44,17 +50,17 @@ public struct SupportMenuLabel: View {
             leadingIcon
                 .frame(width: 24, height: 24)
                 .accessibilityHidden(true)
-            if dynamicTypeSize.isAccessibilitySize, let value {
+            if let stackedDetail {
                 VStack(alignment: .leading, spacing: 4) {
                     titleText
-                    valueText(value)
+                    detailText(stackedDetail)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 titleText
                 Spacer(minLength: 8)
-                if let value {
-                    valueText(value)
+                if case .value(let value)? = detail {
+                    detailText(value)
                 }
             }
             if external {
@@ -75,7 +81,15 @@ public struct SupportMenuLabel: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func valueText(_ value: String) -> some View {
+    private var stackedDetail: String? {
+        switch detail {
+        case .subtitle(let text)?: return text
+        case .value(let text)? where dynamicTypeSize.isAccessibilitySize: return text
+        default: return nil
+        }
+    }
+
+    private func detailText(_ value: String) -> some View {
         Text(value).font(.subheadline).foregroundStyle(Color.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }

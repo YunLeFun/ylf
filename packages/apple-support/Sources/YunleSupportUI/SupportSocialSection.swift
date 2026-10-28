@@ -15,7 +15,7 @@ public struct SupportSocialSection: View {
     public var body: some View {
         Section("社交媒体") {
             Button { copyOfficialAccount(officialAccount) } label: {
-                SupportMenuLabel("微信公众号", icon: .brand(.wechat), value: officialAccount)
+                SupportMenuLabel("微信公众号", icon: .brand(.wechat), detail: .value(officialAccount))
             }
             .supportMenuRow()
             .accessibilityHint("复制公众号名称，在微信中搜索")
@@ -30,7 +30,7 @@ public struct SupportSocialSection: View {
 
     private func website(_ title: String, value: String? = nil, icon: SupportMenuIcon, url: String, id: String) -> some View {
         Button { openWebsite(URL(string: url)!) } label: {
-            SupportMenuLabel(title, icon: icon, value: value, external: true)
+            SupportMenuLabel(title, icon: icon, detail: value.map { .value($0) }, external: true)
         }
         .supportMenuRow()
         .accessibilityIdentifier("support.social." + id)

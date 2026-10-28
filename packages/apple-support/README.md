@@ -21,6 +21,8 @@ Link(destination: URL(string: "https://support.yunle.fun/")!) {
 
 `SupportSocialSection(openWebsite:copyOfficialAccount:)` 共用公众号和社交网站条目，调用方负责打开页面及复制名称。公众号名称作为行内次要信息显示，辅助字号改为上下排列。
 
+`SupportMenuDetail.value` 用于账号等短值，`SupportMenuDetail.subtitle` 用于菜单说明；副标题始终在标题下方。带说明的帮助菜单与普通单行操作共用图标列和行距规则，不为追求等高而截断内容。
+
 `TestFlightFeedbackSection(appName:isTestFlight:)` 接受 App 解析出的分发状态。调用方在稳定的父视图 `.task` 中使用 `await TestFlightDistribution.current()`；不要把任务挂在可能为空的指引内容上。App Store、调试版、模拟器和带本地描述文件的构建均不显示指引。
 
 ## 图标来源
