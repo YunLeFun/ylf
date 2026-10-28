@@ -24,7 +24,6 @@ public struct SupportSocialSection: View {
             website("X", value: "@yunlefun", icon: .brand(.x), url: "https://x.com/yunlefun", id: "x")
             website("哔哩哔哩", value: officialAccount, icon: .brand(.bilibili), url: "https://space.bilibili.com/yunlefun", id: "bilibili")
             website("云乐坊官网", icon: .system("globe"), url: "https://www.yunle.fun", id: "website")
-            website("云乐坊工作室", icon: .system("building.2"), url: "https://studio.yunle.fun", id: "studio")
         }
     }
 
