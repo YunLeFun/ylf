@@ -17,3 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: swift test
+      - name: Compile the shared iOS browser
+        run: |
+          trap 'rm -rf "$RUNNER_TEMP/apple-support"' EXIT
+          xcodebuild -scheme YunleApple -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/apple-support" CODE_SIGNING_ALLOWED=NO build

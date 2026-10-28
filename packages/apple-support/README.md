@@ -1,8 +1,8 @@
 # YunleSupportUI
 
-云乐坊、云食册和云生共用的 SwiftUI 支持菜单。最低支持 iOS 16 / macOS 13，以根目录 `Package.swift` 作为远程 Swift Package 入口。
+云乐坊、云食册和云生共用的 SwiftUI 支持界面。最低支持 iOS 16 / macOS 13，以根目录 `Package.swift` 作为远程 Swift Package 入口。
 
-模块只提供界面、公开联系入口和 TestFlight 分发判定。邮件、剪贴板、网页登录、工单提交、账号和诊断日志仍由各 App 自己管理，不依赖安装云乐坊 App。
+模块提供菜单、TestFlight 指引和 iOS App 内网页容器。表单、工单和帮助由支持网站统一维护；宿主继续管理原生账号、授权与诊断日志，不依赖安装云乐坊 App。
 
 ## 接入
 
@@ -24,6 +24,31 @@ Link(destination: URL(string: "https://support.yunle.fun/")!) {
 `SupportMenuDetail.value` 用于账号等短值，`SupportMenuDetail.subtitle` 用于菜单说明；副标题始终在标题下方。带说明的帮助菜单与普通单行操作共用图标列和行距规则，不为追求等高而截断内容。
 
 `TestFlightFeedbackSection(appName:isTestFlight:)` 接受 App 解析出的分发状态。调用方在稳定的父视图 `.task` 中使用 `await TestFlightDistribution.current()`；不要把任务挂在可能为空的指引内容上。App Store、调试版、模拟器和带本地描述文件的构建均不显示指引。
+
+## 完整支持页面（iOS）
+
+```swift
+import YunleSupportUI
+
+.sheet(isPresented: $showingSupport) {
+    SupportBrowser(configuration: SupportConfiguration(
+        productID: "cook",
+        appName: "云食册"
+    ))
+}
+```
+
+默认直达 `/contact`，自动带入 Bundle 版本与构建号，供用户检查后提交。可指定 `destination: .help`、`.tickets` 或 `.roadmap`。产品标识使用稳定的小写 slug，需先在 Support 的 `apps/web/shared/support-products.ts` 登记产品；新增 iOS App 不需要修改 SDK 的产品枚举。完整接入说明见 [原生支持接入](../../docs/guide/native-support.md)。
+
+容器统一提供完成/返回/重新载入、加载与失败状态、外链打开和未发送草稿的关闭提示。每次呈现使用隔离的内存 WebKit 数据存储，关闭不保证恢复网页会话；网页草稿只在当前会话内恢复，不保存联系方式，不承诺跨 App 或重启后的历史。
+
+宿主已验证 Support 会话时，可用 `SupportBrowser(url:title:cookies:)` 打开工单或其他页面。仅同源、Secure、HttpOnly、根路径的两种 Support Cookie 会进入容器；宿主须在切号时以 `.id(identityGeneration)` 重建、关闭页面并撤销原会话。不会把原生 token 放入网页或 URL，也不会自动把网页登录认作宿主登录。
+
+没有注入会话时，访客可直接反馈。用户选择登录会在 App 内的 Safari 窗口从完整 Support 页面开始；登录请求、校验器和回调都留在该窗口，随后在那里继续工单操作，不声称将会话同步回原容器。旧网站尚未支持 `/2` 时应先部署网站，再分发 App。
+
+`origin:` 只用于明确指定的自托管环境和隔离验收；默认始终为正式 Support。只允许 HTTPS 或 HTTP 回环地址，并按实际 origin 限制顶层导航、消息与 Cookie，不接受 URL 中的账号密码。生产 App 不应从远端或用户输入设置 origin。
+
+截图附件上传和回复通知属于服务端能力，当前容器没有提供虚假的上传或推送按钮，按支持中心对应链路独立接入和验收。
 
 ## 图标来源
 
