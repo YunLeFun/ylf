@@ -2,13 +2,14 @@
 
 YunLeFun 的公共 SDK 与 CLI monorepo，统一维护 `@yunlefun/*` 包。各包独立版本、独立发布，源码使用 MIT 许可；业务服务和生产凭据由各应用独立管理。
 
-| 包                                                                        | 用途                                     |
-| ------------------------------------------------------------------------- | ---------------------------------------- |
-| [`@yunlefun/sso`](packages/sso)                                           | 跨站 SSO 客户端和协议                    |
-| [`@yunlefun/server-session`](packages/server-session)                     | 服务端会话和 H3 帮助函数                 |
-| [`@yunlefun/server-session-cloudbase`](packages/server-session-cloudbase) | CloudBase 会话存储适配器                 |
-| [`@yunlefun/support-client`](packages/support-client)                     | 支持入口、私密反馈提交和可选飞书工单镜像 |
-| [`ylf`](packages/ylf)                                                     | 云乐坊 CLI                               |
+| 包                                                                        | 用途                                           |
+| ------------------------------------------------------------------------- | ---------------------------------------------- |
+| [`@yunlefun/sso`](packages/sso)                                           | 跨站 SSO 客户端和协议                          |
+| [`@yunlefun/server-session`](packages/server-session)                     | 服务端会话和 H3 帮助函数                       |
+| [`@yunlefun/server-session-cloudbase`](packages/server-session-cloudbase) | CloudBase 会话存储适配器                       |
+| [`@yunlefun/support-client`](packages/support-client)                     | 支持入口、私密反馈提交和可选飞书工单镜像       |
+| [`YunleSupportUI`](packages/apple-support)                                | iOS/macOS 反馈菜单、品牌图标与 TestFlight 指引 |
+| [`ylf`](packages/ylf)                                                     | 云乐坊 CLI                                     |
 
 ```sh
 pnpm add @yunlefun/support-client@^0.4.0
