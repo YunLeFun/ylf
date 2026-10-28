@@ -1,0 +1,19 @@
+name: Apple Support UI
+
+on:
+  push:
+    branches: [main]
+    paths: [Package.swift, packages/apple-support/**, .github/workflows/apple-support.yml]
+  pull_request:
+    paths: [Package.swift, packages/apple-support/**, .github/workflows/apple-support.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  swift:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - run: swift test

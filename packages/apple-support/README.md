@@ -1,0 +1,36 @@
+# YunleSupportUI
+
+云乐坊、云食册和云生共用的 SwiftUI 支持菜单。最低支持 iOS 16 / macOS 13，以根目录 `Package.swift` 作为远程 Swift Package 入口。
+
+模块只提供界面、公开联系入口和 TestFlight 分发判定。邮件、剪贴板、网页登录、工单提交、账号和诊断日志仍由各 App 自己管理，不依赖安装云乐坊 App。
+
+## 接入
+
+XcodeGen 在 `packages` 中添加 `https://github.com/YunLeFun/ylf.git`，固定已验证的提交，并在目标的依赖中选择 `YunleSupportUI` 产品；三个 App 应同步升级这个提交。
+
+```swift
+import YunleSupportUI
+
+Link(destination: URL(string: "https://support.yunle.fun/")!) {
+    SupportMenuLabel("支持中心", icon: .system("questionmark.circle"), external: true)
+}
+.supportMenuRow()
+```
+
+`SupportMenuLabel` 使用统一 24pt 图标列、12pt 图文间距、36pt 最小内容高度；`supportMenuRow()` 为原生 Form/List 行设置上下各 10pt、左右各 16pt 的内边距。默认单行菜单为 56pt，标题或辅助字号需要更多空间时自然增高。保留系统分隔线、Button/Link/NavigationLink 语义和 VoiceOver 文案，不用固定高度裁剪文字。
+
+`SupportSocialSection(openWebsite:copyOfficialAccount:)` 共用公众号和社交网站条目，调用方负责打开页面及复制名称。公众号名称作为行内次要信息显示，辅助字号改为上下排列。
+
+`TestFlightFeedbackSection(appName:isTestFlight:)` 接受 App 解析出的分发状态。调用方在稳定的父视图 `.task` 中使用 `await TestFlightDistribution.current()`；不要把任务挂在可能为空的指引内容上。App Store、调试版、模拟器和带本地描述文件的构建均不显示指引。
+
+## 图标来源
+
+- GitHub：从 [GitHub 官方品牌工具包](https://brand.github.com/foundations/logo) 的 `GitHub_Logos.zip` 使用 `GitHub_Invertocat_Black.svg`。黑白显示随系统主题调整。
+- 微信：复用云食册已有的微信双气泡品牌矢量，来源为 [Simple Icons 的 WeChat 图标](https://github.com/simple-icons/simple-icons/blob/develop/icons/wechat.svg)；形状参照[微信官方品牌资源](https://wechat.design/brand/)。
+- X、哔哩哔哩：使用 [Simple Icons](https://github.com/simple-icons/simple-icons) 的 `x.svg`、`bilibili.svg` 品牌矢量（CC0），而非系统通用图标。相关品牌分别见 [X 品牌指引](https://about.x.com/content/dam/about-twitter/x/brand-toolkit/x-brand-guidelines.pdf)和[哔哩哔哩](https://www.bilibili.com/)。
+
+资源随 Swift Package 离线打包，不在用户打开反馈页时请求第三方图标服务。品牌商标权归各自所有者，SDK 的 MIT 许可不重新许可这些商标。
+
+## 验证
+
+在仓库根目录运行 `swift test`，可验证 TestFlight 判定的四组行为。三个 App 还需分别执行原生构建，并通过小屏、深浅色与辅助字号检查集成后的布局。
